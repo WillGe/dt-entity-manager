@@ -12,7 +12,8 @@ Small local web app for working with the Dynatrace Environment API v2:
 
 ```sh
 npm install
-npm run dev
+npm run dev          # development
+npm run build && node build   # standalone production server (adapter-node)
 ```
 
 Open the app, then enter your connection in the dialog:
@@ -28,5 +29,9 @@ Columns: `entityId,tagKey,tagValue` — one tag per row, `tagValue` optional (ke
 
 ## Notes
 
-- Switching to a different environment URL invalidates the local cache automatically.
+- Switching to a different environment URL invalidates the local cache automatically; the connection dialog also shows cache usage and offers a manual "Clear cached data".
 - Detection-settings schemas queried per entity type are defined in `src/lib/api/dynatrace.ts` (`DETECTION_SCHEMAS`) — extend the list there if you want more sections.
+- Entity names link to the entity in the Dynatrace UI.
+- Rate-limit (429) responses are retried once automatically, honoring `Retry-After`.
+- The theme follows your OS by default; the header button toggles auto / dark / light.
+- The active tab and applied filters persist across reloads.

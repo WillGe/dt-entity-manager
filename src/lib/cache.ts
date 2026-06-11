@@ -62,6 +62,13 @@ export function updateCachedByPrefix<T>(prefix: string, update: (value: T) => T)
 	}
 }
 
+/** Approximate bytes used by cached API data (JS strings are UTF-16). */
+export function cacheSizeBytes(): number {
+	let chars = 0;
+	for (const k of cacheKeys()) chars += k.length + (localStorage.getItem(k)?.length ?? 0);
+	return chars * 2;
+}
+
 export function invalidateCache(prefix = ''): void {
 	for (const k of cacheKeys()) {
 		if (k.startsWith(NS + prefix)) localStorage.removeItem(k);

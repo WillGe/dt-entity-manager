@@ -8,6 +8,7 @@
 	import Toasts from '$lib/components/Toasts.svelte';
 	import { connection } from '$lib/stores/connection.svelte';
 	import { entityList } from '$lib/stores/entities.svelte';
+	import { theme } from '$lib/stores/theme.svelte';
 	import { toasts } from '$lib/stores/toasts.svelte';
 	import { downloadCsv, exportEntitiesCsv } from '$lib/csv';
 	import type { DtEntity, EntityType } from '$lib/types';
@@ -95,6 +96,9 @@
 			{#if connection.configured}
 				<span class="muted env">{connection.baseUrl.replace('https://', '')}</span>
 			{/if}
+			<button class="btn" onclick={() => theme.cycle()} title="Cycle theme (auto / dark / light)">
+				{theme.label}
+			</button>
 			<button class="btn" onclick={() => (showConnection = true)}>Connection</button>
 		</div>
 	</header>
