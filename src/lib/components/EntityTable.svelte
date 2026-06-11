@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { connection } from '$lib/stores/connection.svelte';
-	import { entityList, tagLabel } from '$lib/stores/entities.svelte';
+	import { entityList, entityTypeDetail, tagLabel } from '$lib/stores/entities.svelte';
 	import type { DtEntity } from '$lib/types';
 
 	let {
@@ -62,6 +62,7 @@
 					</button>
 				</th>
 				<th>Entity ID</th>
+				<th>Type</th>
 				<th>Tags</th>
 				<th>Management zones</th>
 				<th class="actions-col">Actions</th>
@@ -69,12 +70,12 @@
 		</thead>
 		<tbody>
 			{#if entityList.loading}
-				<tr><td colspan="6" class="state">Loading entities…</td></tr>
+				<tr><td colspan="7" class="state">Loading entities…</td></tr>
 			{:else if entityList.error}
-				<tr><td colspan="6" class="state error">{entityList.error}</td></tr>
+				<tr><td colspan="7" class="state error">{entityList.error}</td></tr>
 			{:else if entityList.visible.length === 0}
 				<tr>
-					<td colspan="6" class="state">
+					<td colspan="7" class="state">
 						{entityList.entities.length === 0
 							? 'No entities match the current filters.'
 							: 'No loaded entities match the quick filter.'}
@@ -102,6 +103,7 @@
 							</a>
 						</td>
 						<td><code>{entity.entityId}</code></td>
+						<td class="type-detail">{entityTypeDetail(entity) || '—'}</td>
 						<td>
 							<div class="chips">
 								{#each entity.tags ?? [] as tag (tagLabel(tag))}
@@ -177,6 +179,11 @@
 	.actions-col {
 		white-space: nowrap;
 		width: 130px;
+	}
+
+	.type-detail {
+		color: var(--muted);
+		max-width: 200px;
 	}
 
 	.state {

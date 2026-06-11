@@ -111,7 +111,7 @@
 		top: 0;
 		right: 0;
 		bottom: 0;
-		width: min(560px, 92vw);
+		width: min(680px, 94vw);
 		background: var(--surface);
 		box-shadow: var(--shadow);
 		display: flex;

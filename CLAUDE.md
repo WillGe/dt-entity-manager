@@ -10,6 +10,7 @@ Local SvelteKit (Svelte 5 runes, TS) app for browsing/tagging Dynatrace entities
 - **Detection settings** schemas per entity type live in `DETECTION_SCHEMAS` (`src/lib/api/dynatrace.ts`); entity scope is queried first, then `environment` scope as "inherited" fallback. Each schema is queried separately because invalid scope/schema combos can 400.
 - "Processes" tab = `PROCESS_GROUP` entities (user decision; that's where tags/settings live).
 - Quick-filter is client-side only; the FilterBar (Apply) is what triggers API calls.
+- Lists fetch one extra property per type for the Type column (`TYPE_DETAIL_FIELD`); list cache keys are prefixed `entities:v2:` (bump on response-shape changes). The service-type filter goes into the selector (`serviceType(...)`), SERVICE tab only.
 - Theming: all colors are CSS `light-dark()` tokens in `app.css`; the theme store only sets `data-theme` on `<html>` (auto/dark/light). Don't hardcode colors in components (toasts are the deliberate exception).
 - Tab + filters persist in localStorage key `dtem:view`; `dtFetch` auto-retries 429 once.
 - No test framework set up; verify with `npm run check` and a real tenant.

@@ -1,7 +1,21 @@
 <script lang="ts">
-	import { entityList, emptyFilters } from '$lib/stores/entities.svelte';
+	import { entityList, emptyFilters, humanizeConstant } from '$lib/stores/entities.svelte';
 	import { toasts } from '$lib/stores/toasts.svelte';
 	import type { EntityFilters } from '$lib/types';
+
+	// Frequent serviceType constants; tenant-specific ones are merged in from loaded rows.
+	const COMMON_SERVICE_TYPES = [
+		'WEB_REQUEST_SERVICE',
+		'WEB_SERVICE',
+		'DATABASE_SERVICE',
+		'MESSAGING_SERVICE',
+		'QUEUE_LISTENER_SERVICE',
+		'RMI_SERVICE',
+		'RPC_SERVICE',
+		'CUSTOM_SERVICE',
+		'EXTERNAL',
+		'BACKGROUND_ACTIVITY'
+	];
 
 	let draft = $state<EntityFilters>({ ...entityList.filters, tags: [...entityList.filters.tags] });
 	let tagInput = $state('');
@@ -31,6 +45,13 @@
 		tagInput = '';
 		await apply();
 	}
+
+	const serviceTypeOptions = $derived.by(() => {
+		const observed = entityList.entities
+			.map((e) => e.properties?.serviceType)
+			.filter((t): t is string => Boolean(t));
+		return [...new Set([...COMMON_SERVICE_TYPES, ...observed])].sort();
+	});
 
 	async function loadMzOptions() {
 		if (mzLoadTried || entityList.mzNames.length > 0) return;
@@ -87,6 +108,21 @@
 			{/if}
 		</select>
 	</div>
+
+	{#if entityList.type === 'SERVICE'}
+		<div class="field">
+			<label for="f-servicetype">Service type</label>
+			<select id="f-servicetype" class="select" bind:value={draft.serviceType}>
+				<option value="">Any</option>
+				{#each serviceTypeOptions as t (t)}
+					<option value={t}>{humanizeConstant(t)}</option>
+				{/each}
+				{#if draft.serviceType && !serviceTypeOptions.includes(draft.serviceType)}
+					<option value={draft.serviceType}>{humanizeConstant(draft.serviceType)}</option>
+				{/if}
+			</select>
+		</div>
+	{/if}
 
 	<div class="field">
 		<label for="f-health">Health</label>
