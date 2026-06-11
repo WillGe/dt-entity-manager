@@ -3,6 +3,12 @@
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",
+	"engines": {
+		"node": ">=20.19 <25"
+	},
+	"overrides": {
+		"@napi-rs/wasm-runtime": "1.1.4"
+	},
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
