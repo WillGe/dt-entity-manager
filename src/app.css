@@ -18,6 +18,24 @@
 	--row-hover: light-dark(#fafbfd, #242834);
 	--radius: 8px;
 	--shadow: 0 8px 30px rgba(10, 12, 20, 0.25);
+	--app-zoom: 1;
+}
+
+/*
+ * Hi-DPI desktops: scale the whole UI up rather than rendering ant-sized 14px
+ * text. Anything sized in viewport units must divide by --app-zoom to stay
+ * viewport-accurate (see EntityTable's max-height).
+ */
+@media (min-width: 2400px) {
+	:root {
+		--app-zoom: 1.25;
+	}
+}
+
+@media (min-width: 3200px) {
+	:root {
+		--app-zoom: 1.5;
+	}
 }
 
 :root[data-theme='light'] {
@@ -34,6 +52,7 @@
 
 body {
 	margin: 0;
+	zoom: var(--app-zoom);
 	background: var(--bg);
 	color: var(--text);
 	font-family:

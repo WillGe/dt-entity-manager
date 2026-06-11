@@ -47,7 +47,7 @@
 		display: flex;
 		align-items: flex-start;
 		justify-content: center;
-		padding: 8vh 16px 16px;
+		padding: calc(8vh / var(--app-zoom, 1)) 16px 16px;
 		z-index: 50;
 	}
 
@@ -57,7 +57,7 @@
 		box-shadow: var(--shadow);
 		width: 100%;
 		max-width: 480px;
-		max-height: 84vh;
+		max-height: calc(84vh / var(--app-zoom, 1));
 		display: flex;
 		flex-direction: column;
 	}

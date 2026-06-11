@@ -3,6 +3,7 @@
 	import CsvImportModal from '$lib/components/CsvImportModal.svelte';
 	import EntityTable from '$lib/components/EntityTable.svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
+	import Logo from '$lib/components/Logo.svelte';
 	import SettingsDrawer from '$lib/components/SettingsDrawer.svelte';
 	import TagModal from '$lib/components/TagModal.svelte';
 	import Toasts from '$lib/components/Toasts.svelte';
@@ -91,7 +92,7 @@
 
 <div class="page">
 	<header class="top">
-		<h1>Dynatrace Entity Manager</h1>
+		<h1><Logo /> <span>Dynatrace Entity Manager</span></h1>
 		<div class="top-right">
 			{#if connection.configured}
 				<span class="muted env">{connection.baseUrl.replace('https://', '')}</span>
@@ -177,9 +178,9 @@
 
 <style>
 	.page {
-		max-width: 1280px;
+		max-width: 1840px;
 		margin: 0 auto;
-		padding: 20px 24px 48px;
+		padding: 20px clamp(24px, 2.5vw, 56px) 48px;
 		display: flex;
 		flex-direction: column;
 		gap: 14px;
@@ -193,6 +194,9 @@
 
 	.top h1 {
 		font-size: 19px;
+		display: flex;
+		align-items: center;
+		gap: 10px;
 	}
 
 	.top-right {

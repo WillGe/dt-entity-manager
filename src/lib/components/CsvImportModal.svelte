@@ -157,7 +157,7 @@
 	}
 
 	.preview {
-		max-height: 45vh;
+		max-height: calc(45vh / var(--app-zoom, 1));
 		overflow: auto;
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
