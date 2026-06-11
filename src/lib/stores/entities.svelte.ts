@@ -2,11 +2,23 @@ import { SvelteSet } from 'svelte/reactivity';
 import {
 	addTags,
 	buildEntitySelector,
+	getDetectionOverrides,
+	getEnvironmentDefaultValue,
+	getOpenProblemCounts,
+	getServiceThroughput,
 	listEntities,
-	listManagementZoneNames
+	listManagementZoneNames,
+	SERVICE_ANOMALY_SCHEMA
 } from '$lib/api/dynatrace';
 import { getCached, setCached, updateCachedByPrefix } from '$lib/cache';
-import type { DtEntity, DtTag, EntityFilters, EntityType, TagInput } from '$lib/types';
+import type {
+	DtEntity,
+	DtTag,
+	EntityFilters,
+	EntityType,
+	RowEnrichment,
+	TagInput
+} from '$lib/types';
 
 const ENTITY_TTL_MS = 30 * 60 * 1000;
 const MZ_TTL_MS = 24 * 60 * 60 * 1000;
@@ -22,8 +34,15 @@ export const emptyFilters = (): EntityFilters => ({
 	serviceType: ''
 });
 
-// v2: lists now include entity properties; ignore pre-properties cache entries.
-const LIST_CACHE_PREFIX = 'entities:v2:';
+// v3: lists now include properties + lastSeenTms; ignore older-shaped cache entries.
+const LIST_CACHE_PREFIX = 'entities:v3:';
+const ENRICH_TTL_MS = 10 * 60 * 1000;
+
+export interface EnrichErrors {
+	detection?: string;
+	problems?: string;
+	throughput?: string;
+}
 
 interface CachedList {
 	entities: DtEntity[];
@@ -47,6 +66,11 @@ class EntityListStore {
 	error = $state<string | null>(null);
 	selected = new SvelteSet<string>();
 	mzNames = $state<string[]>([]);
+
+	/** Per-row batched extras (detection overrides, problems, throughput), keyed by entityId. */
+	enrichments = $state<Record<string, RowEnrichment>>({});
+	enrichErrors = $state<EnrichErrors>({});
+	enriching = $state(false);
 
 	selector = $derived(buildEntitySelector(this.type, this.filters));
 
@@ -107,6 +131,7 @@ class EntityListStore {
 					this.totalCount = hit.value.totalCount;
 					this.nextPageKey = hit.value.nextPageKey;
 					this.fetchedAt = hit.fetchedAt;
+					void this.loadEnrichments();
 					return;
 				}
 			}
@@ -116,6 +141,7 @@ class EntityListStore {
 			this.nextPageKey = page.nextPageKey ?? null;
 			this.fetchedAt = Date.now();
 			this.saveToCache();
+			void this.loadEnrichments(force);
 		} catch (e) {
 			this.error = e instanceof Error ? e.message : String(e);
 			throw e;
@@ -132,6 +158,7 @@ class EntityListStore {
 			this.entities = [...this.entities, ...(page.entities ?? [])];
 			this.nextPageKey = page.nextPageKey ?? null;
 			this.saveToCache();
+			void this.loadEnrichments();
 		} finally {
 			this.loadingMore = false;
 		}
@@ -153,6 +180,86 @@ class EntityListStore {
 		}
 		this.mzNames = await listManagementZoneNames();
 		setCached('mzNames', this.mzNames);
+	}
+
+	/**
+	 * Fetch batched per-row extras for the loaded list. Each source fails
+	 * independently (e.g. missing problems.read/metrics.read token scope) and
+	 * reports into enrichErrors; the rest of the columns still populate.
+	 */
+	async loadEnrichments(force = false): Promise<void> {
+		const selector = this.selector;
+		const ids = this.entities.map((e) => e.entityId);
+		if (ids.length === 0) {
+			this.enrichments = {};
+			return;
+		}
+		const key = `enrich:${LIST_CACHE_PREFIX}${selector}`;
+		if (!force) {
+			const hit = getCached<Record<string, RowEnrichment>>(key, ENRICH_TTL_MS);
+			if (hit && ids.every((id) => id in hit.value)) {
+				this.enrichments = hit.value;
+				this.enrichErrors = {};
+				return;
+			}
+		}
+
+		this.enriching = true;
+		const errors: EnrichErrors = {};
+		const next: Record<string, RowEnrichment> = {};
+		for (const id of ids) next[id] = {};
+		const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+		try {
+			const overrides = await getDetectionOverrides(this.type, ids);
+			const envDefault =
+				this.type === 'SERVICE' ? await this.envAnomalyDefault(force) : null;
+			for (const id of ids) {
+				const objs = overrides.get(id) ?? [];
+				next[id].overriddenSchemas = objs.map((o) => o.schemaId);
+				if (this.type === 'SERVICE') {
+					const own = objs.find((o) => o.schemaId === SERVICE_ANOMALY_SCHEMA)?.value;
+					next[id].detectionSummary = detectionSummary(own ?? envDefault);
+				}
+			}
+		} catch (e) {
+			errors.detection = msg(e);
+		}
+
+		try {
+			const counts = await getOpenProblemCounts(ids);
+			for (const id of ids) next[id].openProblems = counts.get(id) ?? 0;
+		} catch (e) {
+			errors.problems = msg(e);
+		}
+
+		if (this.type === 'SERVICE') {
+			try {
+				const throughput = await getServiceThroughput(ids);
+				for (const id of ids) next[id].throughputPerMin = throughput.get(id) ?? 0;
+			} catch (e) {
+				errors.throughput = msg(e);
+			}
+		}
+
+		// the list changed while we were fetching (tab/filter switch); drop the result
+		if (selector !== this.selector) return;
+
+		this.enrichments = next;
+		this.enrichErrors = errors;
+		this.enriching = false;
+		if (Object.keys(errors).length === 0) setCached(key, next);
+	}
+
+	private async envAnomalyDefault(force: boolean): Promise<unknown> {
+		const key = `envdefault:${SERVICE_ANOMALY_SCHEMA}`;
+		if (!force) {
+			const hit = getCached<unknown>(key, ENTITY_TTL_MS);
+			if (hit) return hit.value;
+		}
+		const value = await getEnvironmentDefaultValue(SERVICE_ANOMALY_SCHEMA);
+		setCached(key, value);
+		return value;
 	}
 
 	/** Add tags via the API, then patch in-memory rows and all cached lists. */
@@ -198,6 +305,28 @@ export function tagLabel(tag: DtTag): string {
 export function humanizeConstant(constant: string): string {
 	const s = constant.replace(/_/g, ' ').toLowerCase();
 	return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * Compact summary of builtin:anomaly-detection.services value, defensive about
+ * shape so a tenant-side schema change degrades to a shorter string, not a crash.
+ */
+function detectionSummary(value: unknown): string {
+	if (!value || typeof value !== 'object') return '';
+	const v = value as Record<string, { enabled?: boolean; detectionMode?: string } | undefined>;
+	const part = (label: string, s?: { enabled?: boolean; detectionMode?: string }) => {
+		if (!s || typeof s !== 'object') return null;
+		if (!s.enabled) return `${label} off`;
+		return s.detectionMode ? `${label} ${s.detectionMode.toLowerCase().replace(/_/g, ' ')}` : `${label} on`;
+	};
+	return [
+		part('failure', v.failureRate),
+		part('resp', v.responseTime),
+		part('load↑', v.loadSpikes),
+		part('load↓', v.loadDrops)
+	]
+		.filter(Boolean)
+		.join(' · ');
 }
 
 /** Per-type detail for the list's "Type" column: serviceType, osType, or PG technologies. */
