@@ -13,3 +13,4 @@ Local SvelteKit (Svelte 5 runes, TS) app for browsing/tagging Dynatrace entities
 - Theming: all colors are CSS `light-dark()` tokens in `app.css`; the theme store only sets `data-theme` on `<html>` (auto/dark/light). Don't hardcode colors in components (toasts are the deliberate exception).
 - Tab + filters persist in localStorage key `dtem:view`; `dtFetch` auto-retries 429 once.
 - No test framework set up; verify with `npm run check` and a real tenant.
+- Node is pinned to 24 LTS (`.nvmrc`, `engines` excludes 25): rolldown's wasm fallback broke under Node 25. `@napi-rs/wasm-runtime` is pinned to 1.1.4 via `overrides` (1.1.5, published 2026-06-10, regressed) — try removing both pins when upstream fixes land.
