@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { connection } from '$lib/stores/connection.svelte';
 	import { entityList, tagLabel } from '$lib/stores/entities.svelte';
 	import type { DtEntity } from '$lib/types';
 
@@ -9,6 +10,20 @@
 		ontag: (entity: DtEntity) => void;
 		onsettings: (entity: DtEntity) => void;
 	} = $props();
+
+	let sortDir = $state<'none' | 'asc' | 'desc'>('none');
+
+	const rows = $derived(
+		sortDir === 'none'
+			? entityList.visible
+			: [...entityList.visible].sort(
+					(a, b) => (sortDir === 'asc' ? 1 : -1) * a.displayName.localeCompare(b.displayName)
+				)
+	);
+
+	function cycleSort() {
+		sortDir = sortDir === 'none' ? 'asc' : sortDir === 'asc' ? 'desc' : 'none';
+	}
 
 	const allVisibleSelected = $derived(
 		entityList.visible.length > 0 &&
@@ -41,7 +56,11 @@
 						aria-label="Select all visible"
 					/>
 				</th>
-				<th>Name</th>
+				<th>
+					<button class="sort" onclick={cycleSort}>
+						Name {sortDir === 'asc' ? '▲' : sortDir === 'desc' ? '▼' : ''}
+					</button>
+				</th>
 				<th>Entity ID</th>
 				<th>Tags</th>
 				<th>Management zones</th>
@@ -62,7 +81,7 @@
 					</td>
 				</tr>
 			{:else}
-				{#each entityList.visible as entity (entity.entityId)}
+				{#each rows as entity (entity.entityId)}
 					<tr>
 						<td class="check">
 							<input
@@ -72,7 +91,16 @@
 								aria-label="Select {entity.displayName}"
 							/>
 						</td>
-						<td class="name">{entity.displayName}</td>
+						<td class="name">
+							<a
+								href="{connection.baseUrl}/ui/entity/{entity.entityId}"
+								target="_blank"
+								rel="noopener noreferrer"
+								title="Open in Dynatrace"
+							>
+								{entity.displayName}
+							</a>
+						</td>
 						<td><code>{entity.entityId}</code></td>
 						<td>
 							<div class="chips">
@@ -114,6 +142,29 @@
 		font-weight: 550;
 		max-width: 320px;
 		overflow-wrap: anywhere;
+	}
+
+	.name a {
+		color: inherit;
+		text-decoration: none;
+	}
+
+	.name a:hover {
+		color: var(--accent);
+		text-decoration: underline;
+	}
+
+	.sort {
+		border: none;
+		background: none;
+		padding: 0;
+		font: inherit;
+		color: inherit;
+		cursor: pointer;
+	}
+
+	.sort:hover {
+		color: var(--accent);
 	}
 
 	.chips {

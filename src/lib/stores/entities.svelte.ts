@@ -10,6 +10,9 @@ import type { DtEntity, DtTag, EntityFilters, EntityType, TagInput } from '$lib/
 
 const ENTITY_TTL_MS = 30 * 60 * 1000;
 const MZ_TTL_MS = 24 * 60 * 60 * 1000;
+const VIEW_KEY = 'dtem:view';
+
+const ENTITY_TYPES: EntityType[] = ['SERVICE', 'HOST', 'PROCESS_GROUP'];
 
 export const emptyFilters = (): EntityFilters => ({
 	name: '',
@@ -43,6 +46,24 @@ class EntityListStore {
 
 	selector = $derived(buildEntitySelector(this.type, this.filters));
 
+	constructor() {
+		// restore last-used tab + filters across reloads
+		const raw = localStorage.getItem(VIEW_KEY);
+		if (raw) {
+			try {
+				const view = JSON.parse(raw) as { type?: EntityType; filters?: Partial<EntityFilters> };
+				if (view.type && ENTITY_TYPES.includes(view.type)) this.type = view.type;
+				if (view.filters) this.filters = { ...emptyFilters(), ...view.filters };
+			} catch {
+				localStorage.removeItem(VIEW_KEY);
+			}
+		}
+	}
+
+	private persistView(): void {
+		localStorage.setItem(VIEW_KEY, JSON.stringify({ type: this.type, filters: this.filters }));
+	}
+
 	visible = $derived.by(() => {
 		const q = this.quickFilter.trim().toLowerCase();
 		if (!q) return this.entities;
@@ -58,12 +79,14 @@ class EntityListStore {
 		if (this.type === type) return;
 		this.type = type;
 		this.selected.clear();
+		this.persistView();
 		await this.load();
 	}
 
 	async applyFilters(filters: EntityFilters): Promise<void> {
 		this.filters = filters;
 		this.selected.clear();
+		this.persistView();
 		await this.load();
 	}
 

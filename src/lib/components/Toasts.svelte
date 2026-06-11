@@ -30,17 +30,18 @@
 		padding: 10px 14px;
 		border-radius: var(--radius);
 		box-shadow: var(--shadow);
-		background: var(--text);
+		/* fixed colors: dark chips with white text read well on both themes */
+		background: #262b36;
 		color: #fff;
 		font-size: 13px;
 	}
 
 	.toast.success {
-		background: var(--success);
+		background: #196c4e;
 	}
 
 	.toast.error {
-		background: var(--danger);
+		background: #b3261e;
 	}
 
 	.toast button {

@@ -1,7 +1,9 @@
 <script lang="ts">
 	import Modal from './Modal.svelte';
 	import { connection } from '$lib/stores/connection.svelte';
+	import { toasts } from '$lib/stores/toasts.svelte';
 	import { testConnection } from '$lib/api/dynatrace';
+	import { cacheSizeBytes, invalidateCache } from '$lib/cache';
 
 	let { onclose, onsaved }: { onclose: () => void; onsaved: () => void } = $props();
 
@@ -30,6 +32,20 @@
 		connection.save(baseUrl, token);
 		onsaved();
 		onclose();
+	}
+
+	let cacheSize = $state(cacheSizeBytes());
+
+	const cacheLabel = $derived(
+		cacheSize < 1024 * 100
+			? `${Math.round(cacheSize / 1024)} KB`
+			: `${(cacheSize / (1024 * 1024)).toFixed(1)} MB`
+	);
+
+	function clearCache() {
+		invalidateCache();
+		cacheSize = cacheSizeBytes();
+		toasts.info('Local cache cleared — next loads will fetch fresh data from the API.');
 	}
 </script>
 
@@ -68,6 +84,13 @@
 		{#if testResult}
 			<p class="result" class:ok={testResult.ok} class:err={!testResult.ok}>{testResult.message}</p>
 		{/if}
+
+		<div class="cache-row">
+			<span class="muted">Cached API data: {cacheLabel} (localStorage quota is ~5 MB)</span>
+			<button class="btn btn-sm" onclick={clearCache} disabled={cacheSize === 0}>
+				Clear cached data
+			</button>
+		</div>
 	</div>
 
 	{#snippet footer()}
@@ -113,5 +136,15 @@
 	.result.err {
 		background: var(--danger-soft);
 		color: var(--danger);
+	}
+
+	.cache-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		padding-top: 12px;
+		border-top: 1px solid var(--border);
+		font-size: 12px;
 	}
 </style>

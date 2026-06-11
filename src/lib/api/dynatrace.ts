@@ -18,6 +18,8 @@ export class DtApiError extends Error {
 	}
 }
 
+const MAX_RETRY_WAIT_S = 60;
+
 async function dtFetch<T>(
 	path: string,
 	opts: {
@@ -28,16 +30,31 @@ async function dtFetch<T>(
 	} = {}
 ): Promise<T> {
 	const qs = new URLSearchParams(opts.params ?? {}).toString();
-	const res = await fetch(`/api/dt/${path}${qs ? `?${qs}` : ''}`, {
-		method: opts.method ?? 'GET',
-		headers: {
-			...(opts.headers ?? connection.headers()),
-			...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {})
-		},
-		body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined
-	});
 
-	if (!res.ok) {
+	for (let attempt = 0; ; attempt++) {
+		const res = await fetch(`/api/dt/${path}${qs ? `?${qs}` : ''}`, {
+			method: opts.method ?? 'GET',
+			headers: {
+				...(opts.headers ?? connection.headers()),
+				...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {})
+			},
+			body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined
+		});
+
+		if (res.ok) {
+			const text = await res.text();
+			return (text ? JSON.parse(text) : undefined) as T;
+		}
+
+		const retryAfter = res.headers.get('retry-after');
+
+		// Honor Retry-After once so batch operations survive a rate-limit hit.
+		if (res.status === 429 && attempt === 0) {
+			const waitS = Math.min(Number(retryAfter) || 5, MAX_RETRY_WAIT_S);
+			await new Promise((resolve) => setTimeout(resolve, waitS * 1000));
+			continue;
+		}
+
 		let message = `${res.status} ${res.statusText}`;
 		try {
 			const data = (await res.json()) as { error?: { message?: string } };
@@ -45,14 +62,10 @@ async function dtFetch<T>(
 		} catch {
 			// non-JSON error body, keep the status text
 		}
-		const retryAfter = res.headers.get('retry-after');
 		if (res.status === 401) message = 'Authentication failed — check your API token and its scopes.';
 		if (res.status === 429) message = `Dynatrace rate limit reached${retryAfter ? `, retry in ${retryAfter}s` : ''}.`;
 		throw new DtApiError(res.status, message, retryAfter ? Number(retryAfter) : undefined);
 	}
-
-	const text = await res.text();
-	return (text ? JSON.parse(text) : undefined) as T;
 }
 
 /** Strip quotes so user input can't break out of selector string literals. */
