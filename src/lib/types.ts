@@ -56,6 +56,38 @@ export interface EntityFilters {
 	serviceType: string;
 }
 
+export type SortDir = 'asc' | 'desc';
+
+export type ColumnId =
+	| 'name'
+	| 'entityId'
+	| 'kind'
+	| 'typeDetail'
+	| 'detection'
+	| 'problems'
+	| 'reqPerMin'
+	| 'keyReqs'
+	| 'lastSeen'
+	| 'tags'
+	| 'mz';
+
+export interface SortState {
+	col: ColumnId;
+	dir: SortDir;
+}
+
+/** Client-side per-column filters over the loaded rows; never trigger API calls. */
+export interface ColumnFilters {
+	name: string; // contains, case-insensitive
+	entityId: string; // contains
+	kind: '' | EntityType;
+	typeDetail: string; // contains, on entityTypeDetail(e)
+	detection: '' | 'custom' | 'default';
+	tags: string; // contains on any tag label
+	mz: string; // exact zone name from loaded rows
+	problems: '' | 'has' | 'none';
+}
+
 export interface TagInput {
 	key: string;
 	value?: string;

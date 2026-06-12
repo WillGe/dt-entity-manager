@@ -88,7 +88,7 @@
 		try {
 			loadedIds = new Set(entityList.entities.map((e) => e.entityId));
 			// bridged edges only reach list members, so the key covers the list too
-			const key = `callgraph:focus:v3:${focus.id}:${loadedIds.size}:${entityList.selector}:${pats.join('|')}`;
+			const key = `callgraph:focus:v3:${focus.id}:${loadedIds.size}:${entityList.listSignature}:${pats.join('|')}`;
 			if (!force) {
 				const hit = getCached<CallEdgesResult>(key, GRAPH_TTL_MS);
 				if (hit) {

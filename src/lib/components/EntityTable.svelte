@@ -1,8 +1,13 @@
 <script lang="ts">
 	import { DETECTION_SCHEMAS } from '$lib/api/dynatrace';
 	import { connection } from '$lib/stores/connection.svelte';
-	import { entityList, entityTypeDetail, tagLabel } from '$lib/stores/entities.svelte';
-	import type { DtEntity } from '$lib/types';
+	import {
+		emptyColumnFilters,
+		entityList,
+		entityTypeDetail,
+		tagLabel
+	} from '$lib/stores/entities.svelte';
+	import type { ColumnId, DtEntity, EntityType } from '$lib/types';
 
 	let {
 		ontag,
@@ -20,8 +25,24 @@
 			.map((s) => [s.id, s.title])
 	);
 
-	const isServices = $derived(entityList.type === 'SERVICE');
-	const colCount = $derived(isServices ? 12 : 10);
+	const KIND_LABEL: Record<EntityType, string> = {
+		SERVICE: 'Service',
+		HOST: 'Host',
+		PROCESS_GROUP: 'Process group'
+	};
+	const KIND_ABBR: Record<EntityType, string> = {
+		SERVICE: 'SVC',
+		HOST: 'HOST',
+		PROCESS_GROUP: 'PG'
+	};
+
+	const hasServices = $derived(entityList.types.includes('SERVICE'));
+	const colCount = $derived(11 + (hasServices ? 2 : 0));
+
+	/** Zone names present in the loaded rows (pre-filter, so options don't vanish while filtering). */
+	const mzOptions = $derived(
+		[...new Set(entityList.entities.flatMap((e) => (e.managementZones ?? []).map((m) => m.name)))].sort()
+	);
 
 	function relTime(ts?: number): string {
 		if (!ts) return '—';
@@ -44,19 +65,19 @@
 		return `Overrides: ${schemaIds.map((id) => schemaTitles[id] ?? id).join(', ')}`;
 	}
 
-	let sortDir = $state<'none' | 'asc' | 'desc'>('none');
-
-	const rows = $derived(
-		sortDir === 'none'
-			? entityList.visible
-			: [...entityList.visible].sort(
-					(a, b) => (sortDir === 'asc' ? 1 : -1) * a.displayName.localeCompare(b.displayName)
-				)
-	);
-
-	function cycleSort() {
-		sortDir = sortDir === 'none' ? 'asc' : sortDir === 'asc' ? 'desc' : 'none';
+	function arrow(col: ColumnId): string {
+		if (entityList.sort?.col !== col) return '';
+		return entityList.sort.dir === 'asc' ? '▲' : '▼';
 	}
+
+	function clearColumnFilters() {
+		entityList.columnFilters = emptyColumnFilters();
+		entityList.persistColumnFilters();
+	}
+
+	const columnFiltersActive = $derived(
+		Object.values(entityList.columnFilters).some((v) => v !== '')
+	);
 
 	const allVisibleSelected = $derived(
 		entityList.visible.length > 0 &&
@@ -90,60 +111,206 @@
 					/>
 				</th>
 				<th>
-					<button class="sort" onclick={cycleSort}>
-						Name {sortDir === 'asc' ? '▲' : sortDir === 'desc' ? '▼' : ''}
+					<button class="sort" onclick={() => entityList.cycleSort('kind')}>
+						Kind {arrow('kind')}
 					</button>
 				</th>
-				<th>Entity ID</th>
-				<th>Type</th>
 				<th>
-					Detection
+					<button class="sort" onclick={() => entityList.cycleSort('name')}>
+						Name {arrow('name')}
+					</button>
+				</th>
+				<th>
+					<button class="sort" onclick={() => entityList.cycleSort('entityId')}>
+						Entity ID {arrow('entityId')}
+					</button>
+				</th>
+				<th>
+					<button class="sort" onclick={() => entityList.cycleSort('typeDetail')}>
+						Type {arrow('typeDetail')}
+					</button>
+				</th>
+				<th>
+					<button class="sort" onclick={() => entityList.cycleSort('detection')}>
+						Detection {arrow('detection')}
+					</button>
 					{#if entityList.enrichErrors.detection}
 						<span class="warn" title={entityList.enrichErrors.detection}>⚠</span>
 					{/if}
 				</th>
 				<th class="num" title="Open problems (last 90 days)">
-					Problems
+					<button class="sort" onclick={() => entityList.cycleSort('problems')}>
+						Problems {arrow('problems')}
+					</button>
 					{#if entityList.enrichErrors.problems}
 						<span class="warn" title={entityList.enrichErrors.problems}>⚠</span>
 					{/if}
 				</th>
-				{#if isServices}
+				{#if hasServices}
 					<th class="num" title="Average requests per minute over the last 2 h">
-						Req/min
+						<button class="sort" onclick={() => entityList.cycleSort('reqPerMin')}>
+							Req/min {arrow('reqPerMin')}
+						</button>
 						{#if entityList.enrichErrors.throughput}
 							<span class="warn" title={entityList.enrichErrors.throughput}>⚠</span>
 						{/if}
 					</th>
 					<th class="num" title="Requests marked as key requests (hover a count for the names)">
-						Key reqs
+						<button class="sort" onclick={() => entityList.cycleSort('keyReqs')}>
+							Key reqs {arrow('keyReqs')}
+						</button>
 						{#if entityList.enrichErrors.detection}
 							<span class="warn" title={entityList.enrichErrors.detection}>⚠</span>
 						{/if}
 					</th>
 				{/if}
-				<th>Last seen</th>
-				<th>Tags</th>
-				<th>Management zones</th>
+				<th>
+					<button class="sort" onclick={() => entityList.cycleSort('lastSeen')}>
+						Last seen {arrow('lastSeen')}
+					</button>
+				</th>
+				<th>
+					<button class="sort" onclick={() => entityList.cycleSort('tags')}>
+						Tags {arrow('tags')}
+					</button>
+				</th>
+				<th>
+					<button class="sort" onclick={() => entityList.cycleSort('mz')}>
+						Management zones {arrow('mz')}
+					</button>
+				</th>
 				<th class="actions-col">Actions</th>
 			</tr>
+			{#if entityList.showColumnFilters}
+				<tr class="filter-row">
+					<th class="check">
+						<button
+							class="btn btn-sm"
+							onclick={clearColumnFilters}
+							disabled={!columnFiltersActive}
+							title="Clear view filters"
+						>
+							✕
+						</button>
+					</th>
+					<th>
+						{#if entityList.types.length > 1}
+							<select
+								class="select cf"
+								bind:value={entityList.columnFilters.kind}
+								onchange={() => entityList.persistColumnFilters()}
+								aria-label="Filter by kind"
+							>
+								<option value="">Any</option>
+								{#each entityList.types as t (t)}
+									<option value={t}>{KIND_LABEL[t]}</option>
+								{/each}
+							</select>
+						{/if}
+					</th>
+					<th>
+						<input
+							class="input cf"
+							placeholder="contains…"
+							bind:value={entityList.columnFilters.name}
+							oninput={() => entityList.persistColumnFilters()}
+							aria-label="Filter by name"
+						/>
+					</th>
+					<th>
+						<input
+							class="input cf"
+							placeholder="contains…"
+							bind:value={entityList.columnFilters.entityId}
+							oninput={() => entityList.persistColumnFilters()}
+							aria-label="Filter by entity ID"
+						/>
+					</th>
+					<th>
+						<input
+							class="input cf"
+							placeholder="contains…"
+							bind:value={entityList.columnFilters.typeDetail}
+							oninput={() => entityList.persistColumnFilters()}
+							aria-label="Filter by type detail"
+						/>
+					</th>
+					<th>
+						<select
+							class="select cf"
+							bind:value={entityList.columnFilters.detection}
+							onchange={() => entityList.persistColumnFilters()}
+							aria-label="Filter by detection"
+						>
+							<option value="">Any</option>
+							<option value="custom">Custom</option>
+							<option value="default">Default</option>
+						</select>
+					</th>
+					<th>
+						<select
+							class="select cf"
+							bind:value={entityList.columnFilters.problems}
+							onchange={() => entityList.persistColumnFilters()}
+							aria-label="Filter by problems"
+						>
+							<option value="">Any</option>
+							<option value="has">Has problems</option>
+							<option value="none">No problems</option>
+						</select>
+					</th>
+					{#if hasServices}
+						<th></th>
+						<th></th>
+					{/if}
+					<th></th>
+					<th>
+						<input
+							class="input cf"
+							placeholder="contains…"
+							bind:value={entityList.columnFilters.tags}
+							oninput={() => entityList.persistColumnFilters()}
+							aria-label="Filter by tag"
+						/>
+					</th>
+					<th>
+						<select
+							class="select cf"
+							bind:value={entityList.columnFilters.mz}
+							onchange={() => entityList.persistColumnFilters()}
+							aria-label="Filter by management zone"
+						>
+							<option value="">Any</option>
+							{#each mzOptions as name (name)}
+								<option value={name}>{name}</option>
+							{/each}
+							{#if entityList.columnFilters.mz && !mzOptions.includes(entityList.columnFilters.mz)}
+								<option value={entityList.columnFilters.mz}>{entityList.columnFilters.mz}</option>
+							{/if}
+						</select>
+					</th>
+					<th></th>
+				</tr>
+			{/if}
 		</thead>
 		<tbody>
-			{#if entityList.loading}
+			{#if entityList.loading && entityList.entities.length === 0}
 				<tr><td colspan={colCount} class="state">Loading entities…</td></tr>
-			{:else if entityList.error}
+			{:else if entityList.error && entityList.entities.length === 0}
 				<tr><td colspan={colCount} class="state error">{entityList.error}</td></tr>
 			{:else if entityList.visible.length === 0}
 				<tr>
 					<td colspan={colCount} class="state">
 						{entityList.entities.length === 0
 							? 'No entities match the current filters.'
-							: 'No loaded entities match the quick filter.'}
+							: 'No loaded entities match the view filters.'}
 					</td>
 				</tr>
 			{:else}
-				{#each rows as entity (entity.entityId)}
+				{#each entityList.visible as entity (entity.entityId)}
 					{@const enr = entityList.enrichments[entity.entityId]}
+					{@const enriching = entityList.pages[entity.type].enriching}
+					{@const zones = entity.managementZones ?? []}
 					<tr>
 						<td class="check">
 							<input
@@ -152,6 +319,11 @@
 								onchange={() => toggle(entity.entityId)}
 								aria-label="Select {entity.displayName}"
 							/>
+						</td>
+						<td class="kind">
+							<span class="badge badge-none" title={KIND_LABEL[entity.type]}>
+								{KIND_ABBR[entity.type]}
+							</span>
 						</td>
 						<td class="name">
 							<a
@@ -177,26 +349,30 @@
 									<div class="det-summary">{enr.detectionSummary}</div>
 								{/if}
 							{:else}
-								<span class="muted">{entityList.enriching ? '…' : '—'}</span>
+								<span class="muted">{enriching ? '…' : '—'}</span>
 							{/if}
 						</td>
 						<td class="num">
 							{#if enr?.openProblems !== undefined}
 								<span class:has-problems={enr.openProblems > 0}>{enr.openProblems}</span>
 							{:else}
-								<span class="muted">{entityList.enriching ? '…' : '—'}</span>
+								<span class="muted">{enriching ? '…' : '—'}</span>
 							{/if}
 						</td>
-						{#if isServices}
+						{#if hasServices}
 							<td class="num">
-								{#if enr?.throughputPerMin !== undefined}
+								{#if entity.type !== 'SERVICE'}
+									<span class="muted">—</span>
+								{:else if enr?.throughputPerMin !== undefined}
 									{fmtPerMin(enr.throughputPerMin)}
 								{:else}
-									<span class="muted">{entityList.enriching ? '…' : '—'}</span>
+									<span class="muted">{enriching ? '…' : '—'}</span>
 								{/if}
 							</td>
 							<td class="num">
-								{#if enr?.keyRequests !== undefined}
+								{#if entity.type !== 'SERVICE'}
+									<span class="muted">—</span>
+								{:else if enr?.keyRequests !== undefined}
 									{#if enr.keyRequests.length > 0}
 										<span class="key-reqs" title={enr.keyRequests.join('\n')}>
 											{enr.keyRequests.length}
@@ -205,7 +381,7 @@
 										<span class="muted">—</span>
 									{/if}
 								{:else}
-									<span class="muted">{entityList.enriching ? '…' : '—'}</span>
+									<span class="muted">{enriching ? '…' : '—'}</span>
 								{/if}
 							</td>
 						{/if}
@@ -221,13 +397,20 @@
 								{/each}
 							</div>
 						</td>
-						<td>
-							{(entity.managementZones ?? []).map((m) => m.name).join(', ') || '—'}
+						<td class="mz" title={zones.length ? zones.map((m) => m.name).join(', ') : undefined}>
+							{#if zones.length}
+								<span class="mz-name">{zones[0].name}</span>
+								{#if zones.length > 1}
+									<span class="chip mz-more">+{zones.length - 1}</span>
+								{/if}
+							{:else}
+								<span class="muted">—</span>
+							{/if}
 						</td>
 						<td class="actions-col">
 							<button class="btn btn-sm" onclick={() => ontag(entity)}>Tag</button>
 							<button class="btn btn-sm" onclick={() => onsettings(entity)}>Settings</button>
-							{#if isServices}
+							{#if entity.type === 'SERVICE'}
 								<button class="btn btn-sm" onclick={() => ongraph(entity)}>Graph</button>
 							{/if}
 						</td>
@@ -250,6 +433,10 @@
 
 	.check {
 		width: 32px;
+	}
+
+	.kind {
+		white-space: nowrap;
 	}
 
 	.name {
@@ -279,6 +466,20 @@
 
 	.sort:hover {
 		color: var(--accent);
+	}
+
+	/* scrolls away with the content instead of stacking under the sticky header row */
+	.filter-row th {
+		position: static;
+		padding: 4px 8px;
+		border-bottom: 2px solid var(--border);
+	}
+
+	.cf {
+		width: 100%;
+		min-width: 70px;
+		padding: 3px 6px;
+		font-size: 12px;
 	}
 
 	.chips {
@@ -323,6 +524,23 @@
 	.last-seen {
 		white-space: nowrap;
 		color: var(--muted);
+	}
+
+	.mz {
+		white-space: nowrap;
+	}
+
+	.mz-name {
+		display: inline-block;
+		max-width: 160px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		vertical-align: bottom;
+	}
+
+	.mz-more {
+		cursor: help;
 	}
 
 	.warn,
