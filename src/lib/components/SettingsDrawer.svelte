@@ -1,7 +1,13 @@
 <script lang="ts">
 	import JsonTree from './JsonTree.svelte';
-	import { getDetectionSettings, KEY_REQUESTS_SCHEMA, keyRequestNames } from '$lib/api/dynatrace';
+	import {
+		getDetectionSettings,
+		getServiceMethodIds,
+		KEY_REQUESTS_SCHEMA,
+		keyRequestNames
+	} from '$lib/api/dynatrace';
 	import { getCached, setCached } from '$lib/cache';
+	import { connection } from '$lib/stores/connection.svelte';
 	import type { DetectionSettingsSection, DtEntity } from '$lib/types';
 
 	let { entity, onclose }: { entity: DtEntity; onclose: () => void } = $props();
@@ -13,9 +19,32 @@
 	let loadError = $state<string | null>(null);
 	let cachedAt = $state<number | null>(null);
 
+	/** request displayName → SERVICE_METHOD id, for deep links on the chips */
+	let methodIds = $state<Record<string, string>>({});
+
+	async function loadMethodIds(force: boolean) {
+		methodIds = {};
+		if (entity.type !== 'SERVICE') return;
+		try {
+			const key = `svcmethods:${entity.entityId}`;
+			if (!force) {
+				const hit = getCached<Record<string, string>>(key, SETTINGS_TTL_MS);
+				if (hit) {
+					methodIds = hit.value;
+					return;
+				}
+			}
+			methodIds = await getServiceMethodIds(entity.entityId);
+			setCached(key, methodIds);
+		} catch {
+			// links are a nicety — chips render fine without them
+		}
+	}
+
 	async function load(force = false) {
 		loading = true;
 		loadError = null;
+		void loadMethodIds(force);
 		try {
 			// v2: services now include the key-requests section; skip older cache entries
 			const key = `settings:v2:${entity.entityId}`;
@@ -94,7 +123,19 @@
 							{:else}
 								<div class="chips">
 									{#each names as name (name)}
-										<span class="chip" title={name}>{name}</span>
+										{#if methodIds[name]}
+											<a
+												class="chip"
+												href="{connection.baseUrl}/ui/entity/{methodIds[name]}"
+												target="_blank"
+												rel="noopener noreferrer"
+												title="Open this request in Dynatrace"
+											>
+												{name}
+											</a>
+										{:else}
+											<span class="chip" title={name}>{name}</span>
+										{/if}
 									{/each}
 								</div>
 							{/if}
@@ -216,6 +257,16 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 4px;
+	}
+
+	a.chip {
+		color: inherit;
+		text-decoration: none;
+	}
+
+	a.chip:hover {
+		color: var(--accent);
+		text-decoration: underline;
 	}
 
 	.manage-note {
