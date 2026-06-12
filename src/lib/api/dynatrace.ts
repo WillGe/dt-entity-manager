@@ -1,5 +1,6 @@
 import { connection } from '$lib/stores/connection.svelte';
 import type {
+	CallEdgesResult,
 	DetectionSettingsSection,
 	EntityFilters,
 	EntityPage,
@@ -326,6 +327,47 @@ export async function getServiceThroughput(entityIds: string[]): Promise<Map<str
 		}
 	}
 	return result;
+}
+
+/**
+ * Service call topology for the given services. Also fetches one hop of calls
+ * for callee services outside the given set, so the graph can bridge through
+ * middlemen that aren't part of the current list. Edges to services we have no
+ * name for (two hops out) are pruned to keep the universe bounded.
+ */
+export async function getServiceCallEdges(entityIds: string[]): Promise<CallEdgesResult> {
+	const calls: Record<string, string[]> = {};
+	const names: Record<string, string> = {};
+
+	const fetchBatch = async (ids: string[]) => {
+		for (const chunk of chunks(ids, BATCH_CHUNK_SIZE)) {
+			const res = await dtFetch<{
+				entities?: {
+					entityId: string;
+					displayName: string;
+					fromRelationships?: { calls?: { id: string }[] };
+				}[];
+			}>('entities', {
+				params: {
+					entitySelector: idSelector(chunk),
+					fields: '+fromRelationships.calls',
+					pageSize: '100'
+				}
+			});
+			for (const e of res.entities ?? []) {
+				names[e.entityId] = e.displayName;
+				calls[e.entityId] = (e.fromRelationships?.calls ?? [])
+					.map((c) => c.id)
+					.filter((id) => id?.startsWith('SERVICE-'));
+			}
+		}
+	};
+
+	await fetchBatch(entityIds);
+	const outside = [...new Set(Object.values(calls).flat())].filter((id) => !(id in names));
+	await fetchBatch(outside);
+	for (const id of Object.keys(calls)) calls[id] = calls[id].filter((t) => t in names);
+	return { calls, names };
 }
 
 export async function listManagementZoneNames(): Promise<string[]> {

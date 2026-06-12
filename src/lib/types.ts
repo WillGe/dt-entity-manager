@@ -59,6 +59,13 @@ export interface TagInput {
 	value?: string;
 }
 
+/** Service call topology: adjacency + display names for every id involved. */
+export interface CallEdgesResult {
+	/** entityId → SERVICE ids it calls (includes one hop for out-of-list services) */
+	calls: Record<string, string[]>;
+	names: Record<string, string>;
+}
+
 /** One schema section of the detection-settings view for an entity. */
 export interface DetectionSettingsSection {
 	schemaId: string;
