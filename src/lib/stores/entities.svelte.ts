@@ -18,8 +18,12 @@ export const emptyFilters = (): EntityFilters => ({
 	name: '',
 	tags: [],
 	mzName: '',
-	healthState: ''
+	healthState: '',
+	serviceType: ''
 });
+
+// v2: lists now include entity properties; ignore pre-properties cache entries.
+const LIST_CACHE_PREFIX = 'entities:v2:';
 
 interface CachedList {
 	entities: DtEntity[];
@@ -71,6 +75,7 @@ class EntityListStore {
 			(e) =>
 				e.displayName.toLowerCase().includes(q) ||
 				e.entityId.toLowerCase().includes(q) ||
+				entityTypeDetail(e).toLowerCase().includes(q) ||
 				(e.tags ?? []).some((t) => tagLabel(t).toLowerCase().includes(q))
 		);
 	});
@@ -94,7 +99,7 @@ class EntityListStore {
 		this.loading = true;
 		this.error = null;
 		try {
-			const key = `entities:${this.selector}`;
+			const key = `${LIST_CACHE_PREFIX}${this.selector}`;
 			if (!force) {
 				const hit = getCached<CachedList>(key, ENTITY_TTL_MS);
 				if (hit) {
@@ -105,7 +110,7 @@ class EntityListStore {
 					return;
 				}
 			}
-			const page = await listEntities(this.selector);
+			const page = await listEntities(this.selector, this.type);
 			this.entities = page.entities ?? [];
 			this.totalCount = page.totalCount;
 			this.nextPageKey = page.nextPageKey ?? null;
@@ -123,7 +128,7 @@ class EntityListStore {
 		if (!this.nextPageKey || this.loadingMore) return;
 		this.loadingMore = true;
 		try {
-			const page = await listEntities(this.selector, this.nextPageKey);
+			const page = await listEntities(this.selector, this.type, this.nextPageKey);
 			this.entities = [...this.entities, ...(page.entities ?? [])];
 			this.nextPageKey = page.nextPageKey ?? null;
 			this.saveToCache();
@@ -133,7 +138,7 @@ class EntityListStore {
 	}
 
 	private saveToCache(): void {
-		setCached<CachedList>(`entities:${this.selector}`, {
+		setCached<CachedList>(`${LIST_CACHE_PREFIX}${this.selector}`, {
 			entities: this.entities,
 			totalCount: this.totalCount,
 			nextPageKey: this.nextPageKey
@@ -187,6 +192,25 @@ function mergeTags(existing: DtTag[], added: DtTag[]): DtTag[] {
 
 export function tagLabel(tag: DtTag): string {
 	return tag.stringRepresentation ?? (tag.value ? `${tag.key}:${tag.value}` : tag.key);
+}
+
+/** "WEB_REQUEST_SERVICE" → "Web request service" */
+export function humanizeConstant(constant: string): string {
+	const s = constant.replace(/_/g, ' ').toLowerCase();
+	return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Per-type detail for the list's "Type" column: serviceType, osType, or PG technologies. */
+export function entityTypeDetail(e: DtEntity): string {
+	const p = e.properties;
+	if (!p) return '';
+	if (p.serviceType) return humanizeConstant(p.serviceType);
+	if (p.osType) return humanizeConstant(p.osType);
+	if (p.softwareTechnologies?.length) {
+		const types = [...new Set(p.softwareTechnologies.map((t) => t.type).filter(Boolean))];
+		return types.map((t) => humanizeConstant(t as string)).join(', ');
+	}
+	return '';
 }
 
 export const entityList = new EntityListStore();

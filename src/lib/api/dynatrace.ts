@@ -83,18 +83,31 @@ export function buildEntitySelector(type: EntityType, filters: EntityFilters): s
 	}
 	if (filters.mzName) parts.push(`mzName("${sel(filters.mzName)}")`);
 	if (filters.healthState) parts.push(`healthState("${filters.healthState}")`);
+	if (type === 'SERVICE' && filters.serviceType)
+		parts.push(`serviceType("${sel(filters.serviceType)}")`);
 	return parts.join(',');
 }
 
 const PAGE_SIZE = 200;
 
-export async function listEntities(selector: string, nextPageKey?: string): Promise<EntityPage> {
+/** Per-type entity property requested for the list's "Type" column. */
+const TYPE_DETAIL_FIELD: Record<EntityType, string> = {
+	SERVICE: '+properties.serviceType',
+	HOST: '+properties.osType',
+	PROCESS_GROUP: '+properties.softwareTechnologies'
+};
+
+export async function listEntities(
+	selector: string,
+	type: EntityType,
+	nextPageKey?: string
+): Promise<EntityPage> {
 	// Dynatrace requires follow-up pages to be requested with nextPageKey only.
 	const params: Record<string, string> = nextPageKey
 		? { nextPageKey }
 		: {
 				entitySelector: selector,
-				fields: '+tags,+managementZones',
+				fields: `+tags,+managementZones,${TYPE_DETAIL_FIELD[type]}`,
 				pageSize: String(PAGE_SIZE)
 			};
 	return dtFetch<EntityPage>('entities', { params });

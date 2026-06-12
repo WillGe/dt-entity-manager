@@ -12,12 +12,19 @@ export interface DtManagementZone {
 	name: string;
 }
 
+export interface DtEntityProperties {
+	serviceType?: string;
+	osType?: string;
+	softwareTechnologies?: { type?: string; edition?: string; version?: string }[];
+}
+
 export interface DtEntity {
 	entityId: string;
 	displayName: string;
 	type: EntityType;
 	tags?: DtTag[];
 	managementZones?: DtManagementZone[];
+	properties?: DtEntityProperties;
 }
 
 export interface EntityPage {
@@ -31,6 +38,8 @@ export interface EntityFilters {
 	tags: string[]; // "key" or "key:value"
 	mzName: string;
 	healthState: '' | 'HEALTHY' | 'UNHEALTHY';
+	/** Service-type constant (e.g. WEB_REQUEST_SERVICE); only used on the Services tab. */
+	serviceType: string;
 }
 
 export interface TagInput {
