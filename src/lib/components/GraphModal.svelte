@@ -10,14 +10,14 @@
 		type SimulationLinkDatum,
 		type SimulationNodeDatum
 	} from 'd3-force';
-	import { getServiceCallEdges } from '$lib/api/dynatrace';
+	import { getServiceNeighborhood } from '$lib/api/dynatrace';
 	import { getCached, setCached } from '$lib/cache';
 	import { buildCallGraph, type CallGraph } from '$lib/graph';
 	import { connection } from '$lib/stores/connection.svelte';
 	import { entityList } from '$lib/stores/entities.svelte';
-	import type { CallEdgesResult } from '$lib/types';
+	import type { CallEdgesResult, DtEntity } from '$lib/types';
 
-	let { onclose }: { onclose: () => void } = $props();
+	let { entity, onclose }: { entity: DtEntity; onclose: () => void } = $props();
 
 	const GRAPH_TTL_MS = 30 * 60 * 1000;
 	const EXCLUDE_KEY = 'dtem:graphExclude';
@@ -38,6 +38,8 @@
 	let error = $state<string | null>(null);
 	let data = $state<CallEdgesResult | null>(null);
 	let loadedIds = new Set<string>();
+	// svelte-ignore state_referenced_locally -- modal is recreated per entity; refocus is internal
+	let focus = $state({ id: entity.entityId, name: entity.displayName });
 
 	let patterns = $state<string[]>(readPatterns());
 	let patternInput = $state('');
@@ -75,9 +77,8 @@
 		loading = true;
 		error = null;
 		try {
-			const ids = entityList.visible.filter((e) => e.type === 'SERVICE').map((e) => e.entityId);
-			loadedIds = new Set(ids);
-			const key = `callgraph:v1:${ids.length}:${entityList.selector}`;
+			loadedIds = new Set(entityList.entities.map((e) => e.entityId));
+			const key = `callgraph:focus:v1:${focus.id}`;
 			if (!force) {
 				const hit = getCached<CallEdgesResult>(key, GRAPH_TTL_MS);
 				if (hit) {
@@ -85,7 +86,7 @@
 					return;
 				}
 			}
-			const fresh = await getServiceCallEdges(ids);
+			const fresh = await getServiceNeighborhood(focus.id);
 			data = fresh;
 			setCached(key, fresh);
 		} catch (e) {
@@ -93,6 +94,12 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	function focusOn(node: { id: string; name: string }) {
+		focus = { id: node.id, name: node.name };
+		selectedId = null;
+		load();
 	}
 
 	// rebuild + re-layout whenever the data or the display filters change
@@ -178,14 +185,19 @@
 	}
 
 	function short(name: string): string {
-		return name.length > 22 ? `${name.slice(0, 21)}…` : name;
+		return name.length > 40 ? `${name.slice(0, 39)}…` : name;
+	}
+
+	function nodeR(id: string): number {
+		return id === focus.id ? R * 1.6 : R;
 	}
 
 	function trimEnd(a: SimNode, b: SimNode): { x: number; y: number } {
 		const dx = (b.x ?? 0) - (a.x ?? 0);
 		const dy = (b.y ?? 0) - (a.y ?? 0);
 		const d = Math.hypot(dx, dy) || 1;
-		return { x: (b.x ?? 0) - (dx / d) * (R + 5), y: (b.y ?? 0) - (dy / d) * (R + 5) };
+		const gap = nodeR(b.id) + 5;
+		return { x: (b.x ?? 0) - (dx / d) * gap, y: (b.y ?? 0) - (dy / d) * gap };
 	}
 
 	// --- pan / zoom / drag -------------------------------------------------
@@ -272,7 +284,7 @@
 <div class="backdrop" onclick={(e) => e.target === e.currentTarget && onclose()} role="presentation">
 	<div class="panel" role="dialog" aria-modal="true" aria-label="Service call graph">
 		<header>
-			<h2>Service call graph</h2>
+			<h2>Service call graph — {focus.name}</h2>
 			{#if graph}
 				<span class="muted stats">
 					{graph.nodes.length} services · {graph.edges.length} calls
@@ -344,6 +356,8 @@
 							{@const b = asNode(l.target)}
 							{#if a && b}
 								{@const end = trimEnd(a, b)}
+								{@const dimmed =
+									neighborIds && idOf(l.source) !== selectedId && idOf(l.target) !== selectedId}
 								<line
 									x1={a.x}
 									y1={a.y}
@@ -351,11 +365,21 @@
 									y2={end.y}
 									class="edge"
 									class:bridged={l.via.length > 0}
-									class:dim={neighborIds && idOf(l.source) !== selectedId && idOf(l.target) !== selectedId}
+									class:dim={dimmed}
 									marker-end="url(#arrow)"
 								>
 									<title>{a.name} → {b.name}{l.via.length ? ` via ${l.via.join(' → ')}` : ''}</title>
 								</line>
+								{#if l.via.length > 0}
+									<text
+										class="via-label"
+										class:dim={dimmed}
+										x={((a.x ?? 0) + (b.x ?? 0)) / 2}
+										y={((a.y ?? 0) + (b.y ?? 0)) / 2 - 4}
+									>
+										via {short(l.via.join(' → '))}
+									</text>
+								{/if}
 							{/if}
 						{/each}
 						{#each nodes as n (n.id)}
@@ -363,13 +387,14 @@
 								transform="translate({n.x ?? 0} {n.y ?? 0})"
 								class="node"
 								class:ghost={n.ghost}
+								class:focus={n.id === focus.id}
 								class:selected={n.id === selectedId}
 								class:dim={neighborIds && !neighborIds.has(n.id)}
 								onpointerdown={(e) => nodeDown(e, n)}
 								role="presentation"
 							>
-								<circle r={R} />
-								<text y={R + 13}>{short(n.name)}</text>
+								<circle r={nodeR(n.id)} />
+								<text y={nodeR(n.id) + 13}>{short(n.name)}</text>
 								<title>{n.name}</title>
 							</g>
 						{/each}
@@ -387,6 +412,11 @@
 								target="_blank"
 								rel="noopener noreferrer">Open in Dynatrace</a
 							>
+							{#if selectedNode.id !== focus.id}
+								<button class="btn btn-sm" onclick={() => focusOn(selectedNode!)}>
+									Focus graph here
+								</button>
+							{/if}
 							<button class="btn btn-sm" onclick={hideSelected}>Hide this service</button>
 						</div>
 					</div>
@@ -560,6 +590,29 @@
 		stroke: var(--accent-strong);
 		stroke-width: 3;
 		stroke-dasharray: none;
+	}
+
+	.node.focus circle {
+		fill: var(--accent-strong);
+	}
+
+	.node.focus text {
+		font-weight: 650;
+	}
+
+	.via-label {
+		fill: var(--muted);
+		font-size: 9px;
+		text-anchor: middle;
+		paint-order: stroke;
+		stroke: var(--bg);
+		stroke-width: 3;
+		stroke-linejoin: round;
+		pointer-events: none;
+	}
+
+	.via-label.dim {
+		opacity: 0.18;
 	}
 
 	.node text {

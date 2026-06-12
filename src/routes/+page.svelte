@@ -23,7 +23,7 @@
 
 	let showConnection = $state(false);
 	let showImport = $state(false);
-	let showGraph = $state(false);
+	let graphEntity = $state<DtEntity | null>(null);
 	let tagTarget = $state<{ ids: string[]; label: string } | null>(null);
 	let settingsEntity = $state<DtEntity | null>(null);
 
@@ -136,11 +136,6 @@
 		{#if entityList.selected.size > 0}
 			<button class="btn" onclick={tagSelected}>Tag {entityList.selected.size} selected</button>
 		{/if}
-		{#if entityList.type === 'SERVICE'}
-			<button class="btn" onclick={() => (showGraph = true)} disabled={entityList.visible.length === 0}>
-				Graph
-			</button>
-		{/if}
 		<button class="btn" onclick={exportCsv} disabled={entityList.visible.length === 0}>
 			Export CSV
 		</button>
@@ -155,6 +150,7 @@
 	<EntityTable
 		ontag={(e) => (tagTarget = { ids: [e.entityId], label: e.displayName })}
 		onsettings={(e) => (settingsEntity = e)}
+		ongraph={(e) => (graphEntity = e)}
 	/>
 
 	{#if entityList.nextPageKey}
@@ -180,8 +176,8 @@
 {#if showImport}
 	<CsvImportModal onclose={() => (showImport = false)} />
 {/if}
-{#if showGraph}
-	<GraphModal onclose={() => (showGraph = false)} />
+{#if graphEntity}
+	<GraphModal entity={graphEntity} onclose={() => (graphEntity = null)} />
 {/if}
 
 <Toasts />

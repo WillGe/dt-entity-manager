@@ -2,7 +2,7 @@
 	import Modal from './Modal.svelte';
 	import { connection } from '$lib/stores/connection.svelte';
 	import { toasts } from '$lib/stores/toasts.svelte';
-	import { testConnection } from '$lib/api/dynatrace';
+	import { testScopes, type ScopeCheck } from '$lib/api/dynatrace';
 	import { cacheSizeBytes, invalidateCache } from '$lib/cache';
 
 	let { onclose, onsaved }: { onclose: () => void; onsaved: () => void } = $props();
@@ -11,18 +11,20 @@
 	let token = $state(connection.token);
 	let showToken = $state(false);
 	let testing = $state(false);
-	let testResult = $state<{ ok: boolean; message: string } | null>(null);
+	let checks = $state<ScopeCheck[] | null>(null);
 
 	const valid = $derived(baseUrl.trim().startsWith('https://') && token.trim() !== '');
 
+	// every probe failing for a non-scope reason = the connection itself is broken
+	const connError = $derived(
+		checks?.every((c) => c.status === 'error') ? (checks[0].message ?? 'Connection failed') : null
+	);
+
 	async function test() {
 		testing = true;
-		testResult = null;
+		checks = null;
 		try {
-			await testConnection({ baseUrl, token });
-			testResult = { ok: true, message: 'Connection OK' };
-		} catch (e) {
-			testResult = { ok: false, message: e instanceof Error ? e.message : String(e) };
+			checks = await testScopes({ baseUrl, token });
 		} finally {
 			testing = false;
 		}
@@ -79,11 +81,31 @@
 			<span class="hint muted">
 				Required scopes: <code>entities.read</code>, <code>entities.write</code>,
 				<code>settings.read</code>; optional: <code>problems.read</code> (Problems column),
-				<code>metrics.read</code> (Req/min column). Stored in this browser's localStorage only.
+				<code>metrics.read</code> (Req/min column). Scopes are fixed when a token is created —
+				to add one, create a new token. Stored in this browser's localStorage only.
 			</span>
 		</div>
-		{#if testResult}
-			<p class="result" class:ok={testResult.ok} class:err={!testResult.ok}>{testResult.message}</p>
+		{#if checks}
+			{#if connError}
+				<p class="result err">{connError}</p>
+			{:else}
+				<ul class="scopes">
+					{#each checks as c (c.scope)}
+						<li>
+							<span class="mark" class:ok={c.status === 'ok'} class:bad={c.status !== 'ok'}>
+								{c.status === 'ok' ? '✓' : '✗'}
+							</span>
+							<code>{c.scope}</code>
+							<span class="muted">{c.purpose}</span>
+							{#if c.status === 'missing'}
+								<span class="missing">missing from this token</span>
+							{:else if c.status === 'error'}
+								<span class="missing" title={c.message}>{c.message}</span>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
 		{/if}
 
 		<div class="cache-row">
@@ -109,6 +131,38 @@
 		gap: 14px;
 	}
 
+	.scopes {
+		list-style: none;
+		margin: 0;
+		padding: 8px 10px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		font-size: 13px;
+	}
+
+	.scopes li {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+	}
+
+	.mark.ok {
+		color: var(--success);
+	}
+
+	.mark.bad {
+		color: var(--danger);
+	}
+
+	.missing {
+		color: var(--danger);
+		font-size: 12px;
+		overflow-wrap: anywhere;
+	}
+
 	.token-row {
 		display: flex;
 		gap: 6px;
@@ -127,11 +181,6 @@
 		padding: 8px 10px;
 		border-radius: var(--radius);
 		font-size: 13px;
-	}
-
-	.result.ok {
-		background: var(--success-soft);
-		color: var(--success);
 	}
 
 	.result.err {

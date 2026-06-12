@@ -6,10 +6,12 @@
 
 	let {
 		ontag,
-		onsettings
+		onsettings,
+		ongraph
 	}: {
 		ontag: (entity: DtEntity) => void;
 		onsettings: (entity: DtEntity) => void;
+		ongraph: (entity: DtEntity) => void;
 	} = $props();
 
 	const schemaTitles: Record<string, string> = Object.fromEntries(
@@ -206,6 +208,9 @@
 						<td class="actions-col">
 							<button class="btn btn-sm" onclick={() => ontag(entity)}>Tag</button>
 							<button class="btn btn-sm" onclick={() => onsettings(entity)}>Settings</button>
+							{#if isServices}
+								<button class="btn btn-sm" onclick={() => ongraph(entity)}>Graph</button>
+							{/if}
 						</td>
 					</tr>
 				{/each}
