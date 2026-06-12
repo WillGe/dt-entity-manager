@@ -3,6 +3,7 @@
 	import {
 		IMPORT_TEMPLATE,
 		downloadCsv,
+		exportTagImportSkeleton,
 		groupImportRows,
 		parseTagImport,
 		type ImportRow,
@@ -65,6 +66,11 @@
 	function tagOf(row: ImportRow): string {
 		return row.tagValue ? `${row.tagKey}:${row.tagValue}` : row.tagKey;
 	}
+
+	function downloadSkeleton() {
+		const slug = entityList.type.toLowerCase().replace('_', '-');
+		downloadCsv(`tag-import-${slug}s.csv`, exportTagImportSkeleton(entityList.visible));
+	}
 </script>
 
 <Modal title="Import tags from CSV" {onclose} wide>
@@ -72,12 +78,15 @@
 		<p>
 			Upload a CSV with columns <code>entityId,tagKey,tagValue</code> (one tag per row,
 			<code>tagValue</code> optional, multiple rows per entity allowed). Tags are added —
-			nothing is removed.
+			nothing is removed. Rows left without a <code>tagKey</code> are skipped on import.
 		</p>
 		<div class="pick-actions">
 			<input type="file" accept=".csv,text/csv" onchange={onFilePicked} />
 			<button class="btn btn-sm" onclick={() => downloadCsv('tag-import-template.csv', IMPORT_TEMPLATE)}>
 				Download template
+			</button>
+			<button class="btn btn-sm" onclick={downloadSkeleton} disabled={entityList.visible.length === 0}>
+				Download current list ({entityList.visible.length})
 			</button>
 		</div>
 	{:else if step === 'preview'}
