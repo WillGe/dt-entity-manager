@@ -64,6 +64,8 @@ async function dtFetch<T>(
 			// non-JSON error body, keep the status text
 		}
 		if (res.status === 401) message = 'Authentication failed — check your API token and its scopes.';
+		if (res.status === 403)
+			message += " Scopes can't be added to an existing token — create a new token with the missing scope and update it under Connection.";
 		if (res.status === 429) message = `Dynatrace rate limit reached${retryAfter ? `, retry in ${retryAfter}s` : ''}.`;
 		throw new DtApiError(res.status, message, retryAfter ? Number(retryAfter) : undefined);
 	}
@@ -330,14 +332,20 @@ export async function getServiceThroughput(entityIds: string[]): Promise<Map<str
 }
 
 /**
- * Service call topology for the given services. Also fetches one hop of calls
- * for callee services outside the given set, so the graph can bridge through
- * middlemen that aren't part of the current list. Edges to services we have no
- * name for (two hops out) are pruned to keep the universe bounded.
+ * Two-hop call topology around one service: the focus, its direct callers and
+ * callees, and theirs. The outermost services contribute their outbound calls
+ * (so bridging through hidden middlemen keeps working) but are not expanded
+ * further; edges to services we have no name for are pruned to keep the
+ * universe bounded.
  */
-export async function getServiceCallEdges(entityIds: string[]): Promise<CallEdgesResult> {
+export async function getServiceNeighborhood(entityId: string): Promise<CallEdgesResult> {
 	const calls: Record<string, string[]> = {};
 	const names: Record<string, string> = {};
+	/** inbound callers per service; only used to grow the neighborhood */
+	const callers: Record<string, string[]> = {};
+
+	const serviceIds = (rels?: { id: string }[]) =>
+		(rels ?? []).map((r) => r.id).filter((id) => id?.startsWith('SERVICE-'));
 
 	const fetchBatch = async (ids: string[]) => {
 		for (const chunk of chunks(ids, BATCH_CHUNK_SIZE)) {
@@ -346,26 +354,30 @@ export async function getServiceCallEdges(entityIds: string[]): Promise<CallEdge
 					entityId: string;
 					displayName: string;
 					fromRelationships?: { calls?: { id: string }[] };
+					toRelationships?: { calls?: { id: string }[]; calledBy?: { id: string }[] };
 				}[];
 			}>('entities', {
 				params: {
 					entitySelector: idSelector(chunk),
-					fields: '+fromRelationships.calls',
+					fields: '+fromRelationships.calls,+toRelationships.calls',
 					pageSize: '100'
 				}
 			});
 			for (const e of res.entities ?? []) {
 				names[e.entityId] = e.displayName;
-				calls[e.entityId] = (e.fromRelationships?.calls ?? [])
-					.map((c) => c.id)
-					.filter((id) => id?.startsWith('SERVICE-'));
+				calls[e.entityId] = serviceIds(e.fromRelationships?.calls);
+				callers[e.entityId] = serviceIds(e.toRelationships?.calls ?? e.toRelationships?.calledBy);
 			}
 		}
 	};
 
-	await fetchBatch(entityIds);
-	const outside = [...new Set(Object.values(calls).flat())].filter((id) => !(id in names));
-	await fetchBatch(outside);
+	let frontier = [entityId];
+	for (let hop = 0; hop <= 2 && frontier.length > 0; hop++) {
+		await fetchBatch(frontier);
+		frontier = [
+			...new Set(frontier.flatMap((id) => [...(calls[id] ?? []), ...(callers[id] ?? [])]))
+		].filter((id) => !(id in names));
+	}
 	for (const id of Object.keys(calls)) calls[id] = calls[id].filter((t) => t in names);
 	return { calls, names };
 }
@@ -380,10 +392,92 @@ export async function listManagementZoneNames(): Promise<string[]> {
 		.sort((a, b) => a.localeCompare(b));
 }
 
-/** Cheapest possible call to validate URL + token (works on unsaved credentials). */
-export async function testConnection(creds: { baseUrl: string; token: string }): Promise<void> {
-	await dtFetch('entities', {
-		params: { entitySelector: 'type("HOST")', pageSize: '1' },
-		headers: { 'x-dt-base-url': creds.baseUrl.trim().replace(/\/+$/, ''), 'x-dt-token': creds.token.trim() }
-	});
+export interface ScopeCheck {
+	scope: string;
+	/** what the scope powers in the UI, e.g. "Problems column" */
+	purpose: string;
+	status: 'ok' | 'missing' | 'error';
+	message?: string;
+}
+
+/**
+ * Probe every documented token scope with the cheapest possible call (works on
+ * unsaved credentials). The entities.write probe tags a selector that matches
+ * nothing — Dynatrace checks the scope before matching, so nothing is changed.
+ */
+export async function testScopes(creds: {
+	baseUrl: string;
+	token: string;
+}): Promise<ScopeCheck[]> {
+	const headers = {
+		'x-dt-base-url': creds.baseUrl.trim().replace(/\/+$/, ''),
+		'x-dt-token': creds.token.trim()
+	};
+	const probes: { scope: string; purpose: string; run: () => Promise<unknown> }[] = [
+		{
+			scope: 'entities.read',
+			purpose: 'entity list',
+			run: () =>
+				dtFetch('entities', { params: { entitySelector: 'type("HOST")', pageSize: '1' }, headers })
+		},
+		{
+			scope: 'entities.write',
+			purpose: 'tagging',
+			run: () =>
+				dtFetch('tags', {
+					method: 'POST',
+					params: { entitySelector: 'entityId("SERVICE-0000000000000000")' },
+					body: { tags: [{ key: 'dtem-scope-probe' }] },
+					headers
+				})
+		},
+		{
+			scope: 'settings.read',
+			purpose: 'detection settings, MZ filter',
+			run: () =>
+				dtFetch('settings/objects', {
+					params: {
+						schemaIds: SERVICE_ANOMALY_SCHEMA,
+						scopes: 'environment',
+						fields: 'value',
+						pageSize: '1'
+					},
+					headers
+				})
+		},
+		{
+			scope: 'problems.read',
+			purpose: 'Problems column',
+			run: () => dtFetch('problems', { params: { from: 'now-1h', pageSize: '1' }, headers })
+		},
+		{
+			scope: 'metrics.read',
+			purpose: 'Req/min column',
+			run: () =>
+				dtFetch('metrics/query', {
+					params: {
+						metricSelector: 'builtin:service.requestCount.total',
+						from: 'now-5m',
+						resolution: 'Inf'
+					},
+					headers
+				})
+		}
+	];
+	return Promise.all(
+		probes.map(async ({ scope, purpose, run }) => {
+			try {
+				await run();
+				return { scope, purpose, status: 'ok' as const };
+			} catch (e) {
+				const missing = e instanceof DtApiError && e.status === 403;
+				return {
+					scope,
+					purpose,
+					status: missing ? ('missing' as const) : ('error' as const),
+					message: e instanceof Error ? e.message : String(e)
+				};
+			}
+		})
+	);
 }

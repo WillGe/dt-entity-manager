@@ -6,7 +6,7 @@ Small local web app for working with the Dynatrace Environment API v2:
 - View per-entity **problem/anomaly-detection settings** (with environment-default fallback when nothing is configured on the entity).
 - **Add tags** to a single entity, to a multi-selection, or in **batch via CSV import**.
 - **Export** the current list to CSV.
-- **Service call graph** — force-directed dependency graph of the filtered services. A persistent exclude list (name substring or entity ID) hides middlemen like L7 proxies: edges are *bridged through* hidden nodes and drawn dashed ("A → B via proxy"), so the real dependencies stay visible. Click a node to highlight its neighbors, open it in Dynatrace, or hide it.
+- **Service call graph** — per-service force-directed dependency graph (the **Graph** button on a service row): the service, its callers and callees, and theirs (two hops). A persistent exclude list (name substring or entity ID) hides middlemen like L7 proxies: edges are *bridged through* hidden nodes, drawn dashed with the middleman's name on the connector, so the real dependencies stay visible. Click a node to highlight its neighbors, re-center the graph on it, open it in Dynatrace, or hide it.
 - Everything read from the API is **cached in localStorage** (entity lists & settings: 30 min, management zones: 24 h) so repeat browsing doesn't consume API rate limits. The Refresh button bypasses the cache.
 
 ## Setup
@@ -20,7 +20,7 @@ npm run build && node build   # standalone production server (adapter-node)
 Open the app, then enter your connection in the dialog:
 
 - **Environment URL** — SaaS: `https://<env-id>.live.dynatrace.com`, Managed: `https://<domain>/e/<env-id>`
-- **API token** — classic access token with scopes `entities.read`, `entities.write`, `settings.read`; optionally `problems.read` (open-problems column) and `metrics.read` (service throughput column) — without them those columns show "—"
+- **API token** — classic access token with scopes `entities.read`, `entities.write`, `settings.read`; optionally `problems.read` (open-problems column) and `metrics.read` (service throughput column) — without them those columns show "—". **Test connection** probes each scope and lists the ones the token is missing; note that scopes can't be added to an existing token, so fixing a missing scope means creating a new token.
 
 The token is stored in your browser's localStorage and is only ever sent to the app's own server route, which proxies requests to Dynatrace (the Dynatrace API does not allow direct browser calls). Treat the machine/browser running this app accordingly.
 
