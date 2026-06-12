@@ -37,6 +37,8 @@ export interface RowEnrichment {
 	openProblems?: number;
 	/** services only; requests per minute averaged over the lookback window */
 	throughputPerMin?: number;
+	/** services only; names of requests marked as key requests */
+	keyRequests?: string[];
 }
 
 export interface EntityPage {

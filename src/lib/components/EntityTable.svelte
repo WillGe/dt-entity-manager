@@ -21,7 +21,7 @@
 	);
 
 	const isServices = $derived(entityList.type === 'SERVICE');
-	const colCount = $derived(isServices ? 11 : 10);
+	const colCount = $derived(isServices ? 12 : 10);
 
 	function relTime(ts?: number): string {
 		if (!ts) return '—';
@@ -115,6 +115,12 @@
 							<span class="warn" title={entityList.enrichErrors.throughput}>⚠</span>
 						{/if}
 					</th>
+					<th class="num" title="Requests marked as key requests (hover a count for the names)">
+						Key reqs
+						{#if entityList.enrichErrors.detection}
+							<span class="warn" title={entityList.enrichErrors.detection}>⚠</span>
+						{/if}
+					</th>
 				{/if}
 				<th>Last seen</th>
 				<th>Tags</th>
@@ -185,6 +191,19 @@
 							<td class="num">
 								{#if enr?.throughputPerMin !== undefined}
 									{fmtPerMin(enr.throughputPerMin)}
+								{:else}
+									<span class="muted">{entityList.enriching ? '…' : '—'}</span>
+								{/if}
+							</td>
+							<td class="num">
+								{#if enr?.keyRequests !== undefined}
+									{#if enr.keyRequests.length > 0}
+										<span class="key-reqs" title={enr.keyRequests.join('\n')}>
+											{enr.keyRequests.length}
+										</span>
+									{:else}
+										<span class="muted">—</span>
+									{/if}
 								{:else}
 									<span class="muted">{entityList.enriching ? '…' : '—'}</span>
 								{/if}
@@ -306,7 +325,8 @@
 		color: var(--muted);
 	}
 
-	.warn {
+	.warn,
+	.key-reqs {
 		cursor: help;
 	}
 
