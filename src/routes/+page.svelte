@@ -3,6 +3,7 @@
 	import CsvImportModal from '$lib/components/CsvImportModal.svelte';
 	import EntityTable from '$lib/components/EntityTable.svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
+	import GraphModal from '$lib/components/GraphModal.svelte';
 	import Logo from '$lib/components/Logo.svelte';
 	import SettingsDrawer from '$lib/components/SettingsDrawer.svelte';
 	import TagModal from '$lib/components/TagModal.svelte';
@@ -22,6 +23,7 @@
 
 	let showConnection = $state(false);
 	let showImport = $state(false);
+	let showGraph = $state(false);
 	let tagTarget = $state<{ ids: string[]; label: string } | null>(null);
 	let settingsEntity = $state<DtEntity | null>(null);
 
@@ -134,6 +136,11 @@
 		{#if entityList.selected.size > 0}
 			<button class="btn" onclick={tagSelected}>Tag {entityList.selected.size} selected</button>
 		{/if}
+		{#if entityList.type === 'SERVICE'}
+			<button class="btn" onclick={() => (showGraph = true)} disabled={entityList.visible.length === 0}>
+				Graph
+			</button>
+		{/if}
 		<button class="btn" onclick={exportCsv} disabled={entityList.visible.length === 0}>
 			Export CSV
 		</button>
@@ -172,6 +179,9 @@
 {/if}
 {#if showImport}
 	<CsvImportModal onclose={() => (showImport = false)} />
+{/if}
+{#if showGraph}
+	<GraphModal onclose={() => (showGraph = false)} />
 {/if}
 
 <Toasts />
