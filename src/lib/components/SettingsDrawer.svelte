@@ -111,7 +111,7 @@
 		top: 0;
 		right: 0;
 		bottom: 0;
-		width: min(680px, 94vw);
+		width: min(680px, calc(94vw / var(--app-zoom, 1)));
 		background: var(--surface);
 		box-shadow: var(--shadow);
 		display: flex;

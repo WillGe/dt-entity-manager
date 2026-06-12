@@ -219,7 +219,8 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		overflow: auto;
-		max-height: calc(100vh - 320px);
+		/* divided by --app-zoom so the zoomed UI still fits the real viewport */
+		max-height: calc(100vh / var(--app-zoom, 1) - 320px);
 		background: var(--surface);
 	}
 
