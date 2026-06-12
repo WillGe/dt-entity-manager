@@ -358,19 +358,20 @@ export async function getServiceThroughput(entityIds: string[]): Promise<Map<str
 
 /** Hard ceiling on services fetched for one graph, so hubs can't flood it. */
 const MAX_GRAPH_SERVICES = 250;
-/** Per hidden middleman, max callers/callees pulled in for bridged edges. */
-const HUB_CAP = 40;
 
 /**
  * Direct call neighborhood of one service: the focus plus its callers and
  * callees, one hop only. Services matching `excludePatterns` (hidden middlemen
- * like L7 proxies) are additionally walked through, so bridged edges can reach
- * the real services behind them. Edges to services we have no name for are
- * pruned to keep the universe bounded.
+ * like L7 proxies) are walked through so bridged edges can reach the services
+ * behind them — but only services from `bridgeIds` (the loaded entity list)
+ * are pulled in that way. A shared proxy's full clientele would otherwise
+ * drown the focused graph in unrelated services: topology alone can't tell
+ * which of the proxy's callers actually route to the focus.
  */
 export async function getServiceNeighborhood(
 	entityId: string,
-	excludePatterns: string[]
+	excludePatterns: string[],
+	bridgeIds: ReadonlySet<string>
 ): Promise<CallEdgesResult> {
 	const calls: Record<string, string[]> = {};
 	const names: Record<string, string> = {};
@@ -421,8 +422,9 @@ export async function getServiceNeighborhood(
 	);
 	await fetchBatch(cap(direct, MAX_GRAPH_SERVICES), true);
 
-	// only hidden middlemen are expanded past one hop; chains of hidden nodes
-	// are followed a few levels (downstream only — their callers aren't fetched)
+	// only hidden middlemen are expanded past one hop, and only toward
+	// services from the loaded list; chains of hidden nodes are followed a few
+	// levels as long as the intermediates are list members themselves
 	const expanded = new Set<string>();
 	for (let depth = 0; depth < 3; depth++) {
 		const hidden = Object.keys(names).filter(
@@ -430,10 +432,8 @@ export async function getServiceNeighborhood(
 		);
 		for (const id of hidden) expanded.add(id);
 		const next = [
-			...new Set(
-				hidden.flatMap((id) => [...cap(calls[id] ?? [], HUB_CAP), ...cap(callers[id] ?? [], HUB_CAP)])
-			)
-		].filter((id) => !(id in names));
+			...new Set(hidden.flatMap((id) => [...(calls[id] ?? []), ...(callers[id] ?? [])]))
+		].filter((id) => bridgeIds.has(id) && !(id in names));
 		if (next.length === 0) break;
 		const room = MAX_GRAPH_SERVICES - Object.keys(names).length;
 		if (room <= 0) {

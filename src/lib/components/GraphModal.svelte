@@ -87,7 +87,8 @@
 		error = null;
 		try {
 			loadedIds = new Set(entityList.entities.map((e) => e.entityId));
-			const key = `callgraph:focus:v2:${focus.id}:${pats.join('|')}`;
+			// bridged edges only reach list members, so the key covers the list too
+			const key = `callgraph:focus:v3:${focus.id}:${loadedIds.size}:${entityList.selector}:${pats.join('|')}`;
 			if (!force) {
 				const hit = getCached<CallEdgesResult>(key, GRAPH_TTL_MS);
 				if (hit) {
@@ -95,7 +96,7 @@
 					return;
 				}
 			}
-			const fresh = await getServiceNeighborhood(focus.id, pats);
+			const fresh = await getServiceNeighborhood(focus.id, pats, loadedIds);
 			if (seq !== loadSeq) return;
 			data = fresh;
 			setCached(key, fresh);
