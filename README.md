@@ -4,6 +4,7 @@ Small local web app for working with the Dynatrace Environment API v2:
 
 - Browse **services, hosts and process groups** with server-side filters (name, tags, management zone, health state) plus an instant client-side quick filter.
 - View per-entity **problem/anomaly-detection settings** (with environment-default fallback when nothing is configured on the entity).
+- View each service's **key requests**: a count column in the list (hover for the request names) and the full list in the settings drawer. View-only — marking key requests stays in the Dynatrace UI.
 - **Add tags** to a single entity, to a multi-selection, or in **batch via CSV import**.
 - **Export** the current list to CSV.
 - **Service call graph** — force-directed dependency graph of the filtered services. A persistent exclude list (name substring or entity ID) hides middlemen like L7 proxies: edges are *bridged through* hidden nodes and drawn dashed ("A → B via proxy"), so the real dependencies stay visible. Click a node to highlight its neighbors, open it in Dynatrace, or hide it.

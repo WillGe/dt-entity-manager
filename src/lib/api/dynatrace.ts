@@ -155,6 +155,19 @@ interface SchemaRef {
 
 export const SERVICE_ANOMALY_SCHEMA = 'builtin:anomaly-detection.services';
 
+/**
+ * Key requests are a per-service settings object holding request names. Kept
+ * out of DETECTION_SCHEMAS: having key requests must not flag a service as
+ * having "custom" detection settings.
+ */
+export const KEY_REQUESTS_SCHEMA = 'builtin:settings.subscriptions.service';
+
+/** Names from a key-requests settings value, defensive about shape. */
+export function keyRequestNames(value: unknown): string[] {
+	const names = (value as { keyRequestNames?: unknown } | undefined)?.keyRequestNames;
+	return Array.isArray(names) ? names.filter((n): n is string => typeof n === 'string') : [];
+}
+
 export const DETECTION_SCHEMAS: Record<EntityType, SchemaRef[]> = {
 	SERVICE: [
 		{ id: SERVICE_ANOMALY_SCHEMA, title: 'Anomaly detection', environmentScope: true },
@@ -189,8 +202,15 @@ export async function getDetectionSettings(entity: {
 	entityId: string;
 	type: EntityType;
 }): Promise<DetectionSettingsSection[]> {
+	const schemas: SchemaRef[] =
+		entity.type === 'SERVICE'
+			? [
+					{ id: KEY_REQUESTS_SCHEMA, title: 'Key requests', environmentScope: false },
+					...DETECTION_SCHEMAS[entity.type]
+				]
+			: DETECTION_SCHEMAS[entity.type];
 	const sections: DetectionSettingsSection[] = [];
-	for (const schema of DETECTION_SCHEMAS[entity.type]) {
+	for (const schema of schemas) {
 		sections.push(await fetchSection(schema, entity.entityId));
 	}
 	return sections;
@@ -236,7 +256,11 @@ export async function getDetectionOverrides(
 	type: EntityType,
 	entityIds: string[]
 ): Promise<Map<string, { schemaId: string; value: unknown }[]>> {
-	const schemaIds = DETECTION_SCHEMAS[type].map((s) => s.id).join(',');
+	// key requests ride along in the same batched call; the caller filters them out
+	const schemaIds = [
+		...DETECTION_SCHEMAS[type].map((s) => s.id),
+		...(type === 'SERVICE' ? [KEY_REQUESTS_SCHEMA] : [])
+	].join(',');
 	const result = new Map<string, { schemaId: string; value: unknown }[]>();
 	for (const chunk of chunks(entityIds, BATCH_CHUNK_SIZE)) {
 		const res = await dtFetch<{ items?: { scope: string; schemaId: string; value: unknown }[] }>(

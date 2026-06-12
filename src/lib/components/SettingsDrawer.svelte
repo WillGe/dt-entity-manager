@@ -1,6 +1,6 @@
 <script lang="ts">
 	import JsonTree from './JsonTree.svelte';
-	import { getDetectionSettings } from '$lib/api/dynatrace';
+	import { getDetectionSettings, KEY_REQUESTS_SCHEMA, keyRequestNames } from '$lib/api/dynatrace';
 	import { getCached, setCached } from '$lib/cache';
 	import type { DetectionSettingsSection, DtEntity } from '$lib/types';
 
@@ -17,7 +17,8 @@
 		loading = true;
 		loadError = null;
 		try {
-			const key = `settings:${entity.entityId}`;
+			// v2: services now include the key-requests section; skip older cache entries
+			const key = `settings:v2:${entity.entityId}`;
 			if (!force) {
 				const hit = getCached<DetectionSettingsSection[]>(key, SETTINGS_TTL_MS);
 				if (hit) {
@@ -54,10 +55,10 @@
 <svelte:window {onkeydown} />
 
 <div class="backdrop" onclick={(e) => e.target === e.currentTarget && onclose()} role="presentation">
-	<div class="drawer" role="dialog" aria-modal="true" aria-label="Problem detection settings">
+	<div class="drawer" role="dialog" aria-modal="true" aria-label="Entity settings">
 		<header>
 			<div>
-				<h2>Problem detection settings</h2>
+				<h2>Entity settings</h2>
 				<p class="muted">
 					{entity.displayName} <code>{entity.entityId}</code>
 				</p>
@@ -79,17 +80,40 @@
 			{:else if sections}
 				{#each sections as section (section.schemaId)}
 					<section>
-						<div class="section-head">
-							<h3>{section.title}</h3>
-							<span class="badge badge-{section.scope}">{scopeLabel[section.scope]}</span>
-						</div>
-						<p class="schema-id muted"><code>{section.schemaId}</code></p>
-						{#if section.error}
-							<p class="error">{section.error}</p>
-						{:else if section.scope === 'none'}
-							<p class="muted">No settings object found at entity or environment scope.</p>
+						{#if section.schemaId === KEY_REQUESTS_SCHEMA}
+							{@const names = keyRequestNames(section.value)}
+							<div class="section-head">
+								<h3>{section.title}</h3>
+								<span class="muted">{names.length} marked</span>
+							</div>
+							<p class="schema-id muted"><code>{section.schemaId}</code></p>
+							{#if section.error}
+								<p class="error">{section.error}</p>
+							{:else if names.length === 0}
+								<p class="muted">No key requests marked for this service.</p>
+							{:else}
+								<div class="chips">
+									{#each names as name (name)}
+										<span class="chip" title={name}>{name}</span>
+									{/each}
+								</div>
+							{/if}
+							<p class="manage-note muted">
+								Managed in Dynatrace: service screen → request → "Mark as key request".
+							</p>
 						{:else}
-							<JsonTree value={section.value} />
+							<div class="section-head">
+								<h3>{section.title}</h3>
+								<span class="badge badge-{section.scope}">{scopeLabel[section.scope]}</span>
+							</div>
+							<p class="schema-id muted"><code>{section.schemaId}</code></p>
+							{#if section.error}
+								<p class="error">{section.error}</p>
+							{:else if section.scope === 'none'}
+								<p class="muted">No settings object found at entity or environment scope.</p>
+							{:else}
+								<JsonTree value={section.value} />
+							{/if}
 						{/if}
 					</section>
 				{/each}
@@ -186,6 +210,17 @@
 	.schema-id {
 		margin: 2px 0 10px;
 		font-size: 11px;
+	}
+
+	.chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+
+	.manage-note {
+		margin: 10px 0 0;
+		font-size: 11.5px;
 	}
 
 	.error {

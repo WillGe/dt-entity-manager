@@ -6,6 +6,8 @@ import {
 	getEnvironmentDefaultValue,
 	getOpenProblemCounts,
 	getServiceThroughput,
+	KEY_REQUESTS_SCHEMA,
+	keyRequestNames,
 	listEntities,
 	listManagementZoneNames,
 	SERVICE_ANOMALY_SCHEMA
@@ -194,7 +196,8 @@ class EntityListStore {
 			this.enrichments = {};
 			return;
 		}
-		const key = `enrich:${LIST_CACHE_PREFIX}${selector}`;
+		// v2: rows now include keyRequests; ignore older-shaped cache entries
+		const key = `enrich:v2:${LIST_CACHE_PREFIX}${selector}`;
 		if (!force) {
 			const hit = getCached<Record<string, RowEnrichment>>(key, ENRICH_TTL_MS);
 			if (hit && ids.every((id) => id in hit.value)) {
@@ -216,10 +219,14 @@ class EntityListStore {
 				this.type === 'SERVICE' ? await this.envAnomalyDefault(force) : null;
 			for (const id of ids) {
 				const objs = overrides.get(id) ?? [];
-				next[id].overriddenSchemas = objs.map((o) => o.schemaId);
+				const detection = objs.filter((o) => o.schemaId !== KEY_REQUESTS_SCHEMA);
+				next[id].overriddenSchemas = detection.map((o) => o.schemaId);
 				if (this.type === 'SERVICE') {
-					const own = objs.find((o) => o.schemaId === SERVICE_ANOMALY_SCHEMA)?.value;
+					const own = detection.find((o) => o.schemaId === SERVICE_ANOMALY_SCHEMA)?.value;
 					next[id].detectionSummary = detectionSummary(own ?? envDefault);
+					next[id].keyRequests = keyRequestNames(
+						objs.find((o) => o.schemaId === KEY_REQUESTS_SCHEMA)?.value
+					);
 				}
 			}
 		} catch (e) {
