@@ -1,4 +1,5 @@
 import { connection } from '$lib/stores/connection.svelte';
+import { matchesPattern } from '$lib/graph';
 import type {
 	CallEdgesResult,
 	DetectionSettingsSection,
@@ -355,23 +356,37 @@ export async function getServiceThroughput(entityIds: string[]): Promise<Map<str
 	return result;
 }
 
+/** Hard ceiling on services fetched for one graph, so hubs can't flood it. */
+const MAX_GRAPH_SERVICES = 250;
+/** Per hidden middleman, max callers/callees pulled in for bridged edges. */
+const HUB_CAP = 40;
+
 /**
- * Two-hop call topology around one service: the focus, its direct callers and
- * callees, and theirs. The outermost services contribute their outbound calls
- * (so bridging through hidden middlemen keeps working) but are not expanded
- * further; edges to services we have no name for are pruned to keep the
- * universe bounded.
+ * Direct call neighborhood of one service: the focus plus its callers and
+ * callees, one hop only. Services matching `excludePatterns` (hidden middlemen
+ * like L7 proxies) are additionally walked through, so bridged edges can reach
+ * the real services behind them. Edges to services we have no name for are
+ * pruned to keep the universe bounded.
  */
-export async function getServiceNeighborhood(entityId: string): Promise<CallEdgesResult> {
+export async function getServiceNeighborhood(
+	entityId: string,
+	excludePatterns: string[]
+): Promise<CallEdgesResult> {
 	const calls: Record<string, string[]> = {};
 	const names: Record<string, string> = {};
-	/** inbound callers per service; only used to grow the neighborhood */
+	/** inbound callers per service; only used to bridge through hidden nodes */
 	const callers: Record<string, string[]> = {};
+	let truncated = false;
 
 	const serviceIds = (rels?: { id: string }[]) =>
 		(rels ?? []).map((r) => r.id).filter((id) => id?.startsWith('SERVICE-'));
 
-	const fetchBatch = async (ids: string[]) => {
+	const cap = (ids: string[], limit: number): string[] => {
+		if (ids.length > limit) truncated = true;
+		return ids.slice(0, limit);
+	};
+
+	const fetchBatch = async (ids: string[], withCallers: boolean) => {
 		for (const chunk of chunks(ids, BATCH_CHUNK_SIZE)) {
 			const res = await dtFetch<{
 				entities?: {
@@ -383,27 +398,53 @@ export async function getServiceNeighborhood(entityId: string): Promise<CallEdge
 			}>('entities', {
 				params: {
 					entitySelector: idSelector(chunk),
-					fields: '+fromRelationships.calls,+toRelationships.calls',
+					fields: withCallers
+						? '+fromRelationships.calls,+toRelationships.calls'
+						: '+fromRelationships.calls',
 					pageSize: '100'
 				}
 			});
 			for (const e of res.entities ?? []) {
 				names[e.entityId] = e.displayName;
 				calls[e.entityId] = serviceIds(e.fromRelationships?.calls);
-				callers[e.entityId] = serviceIds(e.toRelationships?.calls ?? e.toRelationships?.calledBy);
+				if (withCallers)
+					callers[e.entityId] = serviceIds(e.toRelationships?.calls ?? e.toRelationships?.calledBy);
 			}
 		}
 	};
 
-	let frontier = [entityId];
-	for (let hop = 0; hop <= 2 && frontier.length > 0; hop++) {
-		await fetchBatch(frontier);
-		frontier = [
-			...new Set(frontier.flatMap((id) => [...(calls[id] ?? []), ...(callers[id] ?? [])]))
+	// focus + direct neighbors, both directions, so a hidden caller (an L7
+	// proxy in front of the service) can still be bridged through
+	await fetchBatch([entityId], true);
+	const direct = [...new Set([...(calls[entityId] ?? []), ...(callers[entityId] ?? [])])].filter(
+		(id) => !(id in names)
+	);
+	await fetchBatch(cap(direct, MAX_GRAPH_SERVICES), true);
+
+	// only hidden middlemen are expanded past one hop; chains of hidden nodes
+	// are followed a few levels (downstream only — their callers aren't fetched)
+	const expanded = new Set<string>();
+	for (let depth = 0; depth < 3; depth++) {
+		const hidden = Object.keys(names).filter(
+			(id) => !expanded.has(id) && excludePatterns.some((p) => matchesPattern(p, id, names[id]))
+		);
+		for (const id of hidden) expanded.add(id);
+		const next = [
+			...new Set(
+				hidden.flatMap((id) => [...cap(calls[id] ?? [], HUB_CAP), ...cap(callers[id] ?? [], HUB_CAP)])
+			)
 		].filter((id) => !(id in names));
+		if (next.length === 0) break;
+		const room = MAX_GRAPH_SERVICES - Object.keys(names).length;
+		if (room <= 0) {
+			truncated = true;
+			break;
+		}
+		await fetchBatch(cap(next, room), false);
 	}
+
 	for (const id of Object.keys(calls)) calls[id] = calls[id].filter((t) => t in names);
-	return { calls, names };
+	return { calls, names, truncated };
 }
 
 export async function listManagementZoneNames(): Promise<string[]> {

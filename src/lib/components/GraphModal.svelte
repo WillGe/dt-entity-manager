@@ -68,17 +68,26 @@
 		localStorage.setItem(EXCLUDE_KEY, JSON.stringify(patterns));
 	});
 
-	onMount(() => {
-		load();
-		return () => sim?.stop();
+	onMount(() => () => sim?.stop());
+
+	// reload when the focus or the exclude list changes: hidden middlemen are
+	// walked through during the fetch, so the data depends on the patterns
+	$effect(() => {
+		void focus.id;
+		void patterns;
+		untrack(() => load());
 	});
 
+	let loadSeq = 0;
+
 	async function load(force = false) {
+		const seq = ++loadSeq;
+		const pats = [...patterns].sort();
 		loading = true;
 		error = null;
 		try {
 			loadedIds = new Set(entityList.entities.map((e) => e.entityId));
-			const key = `callgraph:focus:v1:${focus.id}`;
+			const key = `callgraph:focus:v2:${focus.id}:${pats.join('|')}`;
 			if (!force) {
 				const hit = getCached<CallEdgesResult>(key, GRAPH_TTL_MS);
 				if (hit) {
@@ -86,20 +95,20 @@
 					return;
 				}
 			}
-			const fresh = await getServiceNeighborhood(focus.id);
+			const fresh = await getServiceNeighborhood(focus.id, pats);
+			if (seq !== loadSeq) return;
 			data = fresh;
 			setCached(key, fresh);
 		} catch (e) {
-			error = e instanceof Error ? e.message : String(e);
+			if (seq === loadSeq) error = e instanceof Error ? e.message : String(e);
 		} finally {
-			loading = false;
+			if (seq === loadSeq) loading = false;
 		}
 	}
 
 	function focusOn(node: { id: string; name: string }) {
 		focus = { id: node.id, name: node.name };
 		selectedId = null;
-		load();
 	}
 
 	// rebuild + re-layout whenever the data or the display filters change
@@ -289,6 +298,9 @@
 				<span class="muted stats">
 					{graph.nodes.length} services · {graph.edges.length} calls
 					{#if graph.hiddenCount}· {graph.hiddenCount} hidden{/if}
+					{#if data?.truncated}
+						· <span class="capped" title="Large fan-in/out was capped to keep the graph and API usage small">capped</span>
+					{/if}
 				</span>
 			{/if}
 			<div class="head-actions">
@@ -329,7 +341,7 @@
 		</div>
 
 		<div class="canvas">
-			{#if loading}
+			{#if loading && !graph}
 				<p class="muted center">Loading call topology…</p>
 			{:else if error}
 				<p class="error center">{error}</p>
@@ -468,6 +480,11 @@
 
 	.stats {
 		font-size: 12.5px;
+	}
+
+	.capped {
+		cursor: help;
+		text-decoration: underline dotted;
 	}
 
 	.head-actions {

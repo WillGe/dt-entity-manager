@@ -66,6 +66,8 @@ export interface CallEdgesResult {
 	/** entityId → SERVICE ids it calls (includes one hop for out-of-list services) */
 	calls: Record<string, string[]>;
 	names: Record<string, string>;
+	/** true when a fan-in/out or total-size cap cut the neighborhood short */
+	truncated?: boolean;
 }
 
 /** One schema section of the detection-settings view for an entity. */

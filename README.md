@@ -7,7 +7,7 @@ Small local web app for working with the Dynatrace Environment API v2:
 - View each service's **key requests**: a count column in the list (hover for the request names) and the full list in the settings drawer. View-only — marking key requests stays in the Dynatrace UI.
 - **Add tags** to a single entity, to a multi-selection, or in **batch via CSV import**.
 - **Export** the current list to CSV.
-- **Service call graph** — per-service force-directed dependency graph (the **Graph** button on a service row): the service, its callers and callees, and theirs (two hops). A persistent exclude list (name substring or entity ID) hides middlemen like L7 proxies: edges are *bridged through* hidden nodes, drawn dashed with the middleman's name on the connector, so the real dependencies stay visible. Click a node to highlight its neighbors, re-center the graph on it, open it in Dynatrace, or hide it.
+- **Service call graph** — per-service force-directed dependency graph (the **Graph** button on a service row): the service and its direct callers and callees. A persistent exclude list (name substring or entity ID) hides middlemen like L7 proxies: edges are *bridged through* hidden nodes, drawn dashed with the middleman's name on the connector, so the real dependencies stay visible — only hidden middlemen are expanded past one hop, with caps, to keep API usage small. Click a node to highlight its neighbors, re-center the graph on it, open it in Dynatrace, or hide it.
 - Everything read from the API is **cached in localStorage** (entity lists & settings: 30 min, management zones: 24 h) so repeat browsing doesn't consume API rate limits. The Refresh button bypasses the cache.
 
 ## Setup
