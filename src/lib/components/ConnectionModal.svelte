@@ -78,7 +78,8 @@
 			</div>
 			<span class="hint muted">
 				Required scopes: <code>entities.read</code>, <code>entities.write</code>,
-				<code>settings.read</code>. Stored in this browser's localStorage only.
+				<code>settings.read</code>; optional: <code>problems.read</code> (Problems column),
+				<code>metrics.read</code> (Req/min column). Stored in this browser's localStorage only.
 			</span>
 		</div>
 		{#if testResult}

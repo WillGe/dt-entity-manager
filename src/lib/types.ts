@@ -25,6 +25,18 @@ export interface DtEntity {
 	tags?: DtTag[];
 	managementZones?: DtManagementZone[];
 	properties?: DtEntityProperties;
+	lastSeenTms?: number;
+}
+
+/** Batched per-row data fetched after the entity list itself. */
+export interface RowEnrichment {
+	/** schemaIds with an entity-scoped settings object; empty = inherits environment defaults */
+	overriddenSchemas?: string[];
+	/** compact anomaly-detection summary (services only), e.g. "failure auto · resp auto" */
+	detectionSummary?: string;
+	openProblems?: number;
+	/** services only; requests per minute averaged over the lookback window */
+	throughputPerMin?: number;
 }
 
 export interface EntityPage {

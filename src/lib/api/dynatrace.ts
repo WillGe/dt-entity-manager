@@ -107,13 +107,23 @@ export async function listEntities(
 		? { nextPageKey }
 		: {
 				entitySelector: selector,
-				fields: `+tags,+managementZones,${TYPE_DETAIL_FIELD[type]}`,
+				fields: `+tags,+managementZones,+lastSeenTms,${TYPE_DETAIL_FIELD[type]}`,
 				pageSize: String(PAGE_SIZE)
 			};
 	return dtFetch<EntityPage>('entities', { params });
 }
 
 const TAG_CHUNK_SIZE = 50;
+
+function chunks<T>(arr: T[], size: number): T[][] {
+	const out: T[][] = [];
+	for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+	return out;
+}
+
+function idSelector(ids: string[]): string {
+	return `entityId(${ids.map((id) => `"${id}"`).join(',')})`;
+}
 
 export async function addTags(
 	entityIds: string[],
@@ -123,7 +133,7 @@ export async function addTags(
 	let matched = 0;
 	for (let i = 0; i < entityIds.length; i += TAG_CHUNK_SIZE) {
 		const chunk = entityIds.slice(i, i + TAG_CHUNK_SIZE);
-		const selector = `entityId(${chunk.map((id) => `"${id}"`).join(',')})`;
+		const selector = idSelector(chunk);
 		const res = await dtFetch<{ matchedEntitiesCount?: number }>('tags', {
 			method: 'POST',
 			params: { entitySelector: selector },
@@ -142,9 +152,11 @@ interface SchemaRef {
 	environmentScope: boolean;
 }
 
-const DETECTION_SCHEMAS: Record<EntityType, SchemaRef[]> = {
+export const SERVICE_ANOMALY_SCHEMA = 'builtin:anomaly-detection.services';
+
+export const DETECTION_SCHEMAS: Record<EntityType, SchemaRef[]> = {
 	SERVICE: [
-		{ id: 'builtin:anomaly-detection.services', title: 'Anomaly detection', environmentScope: true },
+		{ id: SERVICE_ANOMALY_SCHEMA, title: 'Anomaly detection', environmentScope: true },
 		{
 			id: 'builtin:failure-detection.service.general-parameters',
 			title: 'Failure detection — general parameters',
@@ -211,6 +223,109 @@ async function listSettingsValues(schemaId: string, scope: string): Promise<unkn
 
 function unwrap(values: unknown[]): unknown {
 	return values.length === 1 ? values[0] : values;
+}
+
+const BATCH_CHUNK_SIZE = 50;
+
+/**
+ * Map of entityId → settings objects scoped *directly* to it. An entity present
+ * in the map overrides the environment defaults; an absent one inherits them.
+ */
+export async function getDetectionOverrides(
+	type: EntityType,
+	entityIds: string[]
+): Promise<Map<string, { schemaId: string; value: unknown }[]>> {
+	const schemaIds = DETECTION_SCHEMAS[type].map((s) => s.id).join(',');
+	const result = new Map<string, { schemaId: string; value: unknown }[]>();
+	for (const chunk of chunks(entityIds, BATCH_CHUNK_SIZE)) {
+		const res = await dtFetch<{ items?: { scope: string; schemaId: string; value: unknown }[] }>(
+			'settings/objects',
+			{
+				params: {
+					schemaIds,
+					scopes: chunk.join(','),
+					fields: 'scope,schemaId,value',
+					pageSize: '500'
+				}
+			}
+		);
+		for (const item of res.items ?? []) {
+			const list = result.get(item.scope) ?? [];
+			list.push({ schemaId: item.schemaId, value: item.value });
+			result.set(item.scope, list);
+		}
+	}
+	return result;
+}
+
+/** Environment-wide default settings object for a schema, or null if none exists. */
+export async function getEnvironmentDefaultValue(schemaId: string): Promise<unknown> {
+	const values = await listSettingsValues(schemaId, 'environment');
+	return values.length > 0 ? unwrap(values) : null;
+}
+
+/** Count of OPEN problems per entity. Requires the problems.read token scope. */
+export async function getOpenProblemCounts(entityIds: string[]): Promise<Map<string, number>> {
+	const wanted = new Set(entityIds);
+	const counts = new Map<string, number>();
+	for (const chunk of chunks(entityIds, BATCH_CHUNK_SIZE)) {
+		let nextPageKey: string | undefined;
+		// page cap so a tenant-wide problem storm can't loop forever
+		for (let page = 0; page < 5; page++) {
+			const params: Record<string, string> = nextPageKey
+				? { nextPageKey }
+				: {
+						problemSelector: 'status("open")',
+						entitySelector: idSelector(chunk),
+						from: 'now-90d',
+						pageSize: '500'
+					};
+			const res = await dtFetch<{
+				problems?: { affectedEntities?: { entityId?: { id?: string } }[] }[];
+				nextPageKey?: string;
+			}>('problems', { params });
+			for (const p of res.problems ?? []) {
+				for (const ae of p.affectedEntities ?? []) {
+					const id = ae.entityId?.id;
+					if (id && wanted.has(id)) counts.set(id, (counts.get(id) ?? 0) + 1);
+				}
+			}
+			nextPageKey = res.nextPageKey;
+			if (!nextPageKey) break;
+		}
+	}
+	return counts;
+}
+
+export const THROUGHPUT_WINDOW_MIN = 120;
+
+/** Requests per minute per service over the lookback window. Requires metrics.read. */
+export async function getServiceThroughput(entityIds: string[]): Promise<Map<string, number>> {
+	const result = new Map<string, number>();
+	for (const chunk of chunks(entityIds, BATCH_CHUNK_SIZE)) {
+		const res = await dtFetch<{
+			result?: {
+				data?: {
+					dimensionMap?: Record<string, string>;
+					dimensions?: string[];
+					values?: (number | null)[];
+				}[];
+			}[];
+		}>('metrics/query', {
+			params: {
+				metricSelector: 'builtin:service.requestCount.total:splitBy("dt.entity.service"):sum',
+				entitySelector: `type("SERVICE"),${idSelector(chunk)}`,
+				from: `now-${THROUGHPUT_WINDOW_MIN}m`,
+				resolution: 'Inf'
+			}
+		});
+		for (const series of res.result?.[0]?.data ?? []) {
+			const id = series.dimensionMap?.['dt.entity.service'] ?? series.dimensions?.[0];
+			const total = (series.values ?? []).find((v) => v !== null);
+			if (id && typeof total === 'number') result.set(id, total / THROUGHPUT_WINDOW_MIN);
+		}
+	}
+	return result;
 }
 
 export async function listManagementZoneNames(): Promise<string[]> {

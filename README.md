@@ -19,7 +19,7 @@ npm run build && node build   # standalone production server (adapter-node)
 Open the app, then enter your connection in the dialog:
 
 - **Environment URL** — SaaS: `https://<env-id>.live.dynatrace.com`, Managed: `https://<domain>/e/<env-id>`
-- **API token** — classic access token with scopes `entities.read`, `entities.write`, `settings.read`
+- **API token** — classic access token with scopes `entities.read`, `entities.write`, `settings.read`; optionally `problems.read` (open-problems column) and `metrics.read` (service throughput column) — without them those columns show "—"
 
 The token is stored in your browser's localStorage and is only ever sent to the app's own server route, which proxies requests to Dynatrace (the Dynatrace API does not allow direct browser calls). Treat the machine/browser running this app accordingly.
 
