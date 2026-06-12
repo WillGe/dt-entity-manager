@@ -171,6 +171,26 @@ export function keyRequestNames(value: unknown): string[] {
 	return Array.isArray(names) ? names.filter((n): n is string => typeof n === 'string') : [];
 }
 
+/**
+ * displayName → SERVICE_METHOD id for a service's requests. Key requests exist
+ * as SERVICE_METHOD entities, so this lets request names deep-link to their
+ * details page in Dynatrace.
+ */
+export async function getServiceMethodIds(serviceId: string): Promise<Record<string, string>> {
+	const res = await dtFetch<{ entities?: { entityId: string; displayName: string }[] }>(
+		'entities',
+		{
+			params: {
+				entitySelector: `type("SERVICE_METHOD"),fromRelationships.isServiceMethodOfService(type("SERVICE"),entityId("${serviceId}"))`,
+				pageSize: '500'
+			}
+		}
+	);
+	const map: Record<string, string> = {};
+	for (const e of res.entities ?? []) map[e.displayName] = e.entityId;
+	return map;
+}
+
 export const DETECTION_SCHEMAS: Record<EntityType, SchemaRef[]> = {
 	SERVICE: [
 		{ id: SERVICE_ANOMALY_SCHEMA, title: 'Anomaly detection', environmentScope: true },
