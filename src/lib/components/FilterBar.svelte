@@ -1,7 +1,21 @@
 <script lang="ts">
 	import { entityList, emptyFilters, humanizeConstant } from '$lib/stores/entities.svelte';
 	import { toasts } from '$lib/stores/toasts.svelte';
-	import type { EntityFilters } from '$lib/types';
+	import type { EntityFilters, EntityType } from '$lib/types';
+
+	const TYPE_OPTIONS: { type: EntityType; label: string }[] = [
+		{ type: 'SERVICE', label: 'Services' },
+		{ type: 'HOST', label: 'Hosts' },
+		{ type: 'PROCESS_GROUP', label: 'Process groups' }
+	];
+
+	async function toggleType(type: EntityType) {
+		try {
+			await entityList.toggleType(type);
+		} catch (e) {
+			toasts.error(e instanceof Error ? e.message : String(e));
+		}
+	}
 
 	// Frequent serviceType constants; tenant-specific ones are merged in from loaded rows.
 	const COMMON_SERVICE_TYPES = [
@@ -66,6 +80,28 @@
 
 <div class="bar">
 	<div class="field">
+		<span class="label">Types</span>
+		<div class="type-toggles">
+			{#each TYPE_OPTIONS as opt (opt.type)}
+				{@const active = entityList.types.includes(opt.type)}
+				<button
+					class="btn type-toggle"
+					class:active
+					onclick={() => toggleType(opt.type)}
+					disabled={active && entityList.types.length === 1}
+					title={active && entityList.types.length === 1
+						? 'At least one type stays enabled'
+						: active
+							? `Hide ${opt.label.toLowerCase()}`
+							: `Fetch and show ${opt.label.toLowerCase()}`}
+				>
+					{opt.label}
+				</button>
+			{/each}
+		</div>
+	</div>
+
+	<div class="field">
 		<label for="f-name">Name starts with</label>
 		<input
 			id="f-name"
@@ -109,8 +145,8 @@
 		</select>
 	</div>
 
-	{#if entityList.type === 'SERVICE'}
-		<div class="field">
+	{#if entityList.types.includes('SERVICE')}
+		<div class="field" title="Only constrains services; hosts and process groups are unaffected">
 			<label for="f-servicetype">Service type</label>
 			<select id="f-servicetype" class="select" bind:value={draft.serviceType}>
 				<option value="">Any</option>
@@ -181,5 +217,28 @@
 		display: flex;
 		gap: 8px;
 		margin-left: auto;
+	}
+
+	.label {
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--muted);
+	}
+
+	.type-toggles {
+		display: flex;
+		gap: 6px;
+	}
+
+	.type-toggle.active {
+		background: var(--accent-soft);
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+
+	/* the locked last-enabled toggle should stay readable, just not look clickable */
+	.type-toggle.active:disabled {
+		opacity: 0.85;
+		cursor: default;
 	}
 </style>

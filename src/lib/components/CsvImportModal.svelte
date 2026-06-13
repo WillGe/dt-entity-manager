@@ -68,7 +68,7 @@
 	}
 
 	function downloadSkeleton() {
-		const slug = entityList.type.toLowerCase().replace('_', '-');
+		const slug = entityList.types.map((t) => t.toLowerCase().replace('_', '-')).join('-');
 		downloadCsv(`tag-import-${slug}s.csv`, exportTagImportSkeleton(entityList.visible));
 	}
 </script>

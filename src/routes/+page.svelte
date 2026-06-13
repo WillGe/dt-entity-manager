@@ -13,13 +13,7 @@
 	import { theme } from '$lib/stores/theme.svelte';
 	import { toasts } from '$lib/stores/toasts.svelte';
 	import { downloadCsv, exportEntitiesCsv } from '$lib/csv';
-	import type { DtEntity, EntityType } from '$lib/types';
-
-	const TABS: { type: EntityType; label: string }[] = [
-		{ type: 'SERVICE', label: 'Services' },
-		{ type: 'HOST', label: 'Hosts' },
-		{ type: 'PROCESS_GROUP', label: 'Process groups' }
-	];
+	import type { DtEntity } from '$lib/types';
 
 	let showConnection = $state(false);
 	let showImport = $state(false);
@@ -40,14 +34,6 @@
 		}
 	});
 
-	async function switchTab(type: EntityType) {
-		try {
-			await entityList.setType(type);
-		} catch (e) {
-			toasts.error(e instanceof Error ? e.message : String(e));
-		}
-	}
-
 	async function refresh() {
 		try {
 			await entityList.load(true);
@@ -64,10 +50,24 @@
 		}
 	}
 
+	async function loadAll() {
+		try {
+			await entityList.loadAll();
+		} catch (e) {
+			toasts.error(e instanceof Error ? e.message : String(e));
+		}
+	}
+
+	function toggleColumnFilters() {
+		entityList.showColumnFilters = !entityList.showColumnFilters;
+		entityList.persistView();
+	}
+
 	function exportCsv() {
 		const rows = entityList.visible;
 		const date = new Date().toISOString().slice(0, 10);
-		downloadCsv(`dynatrace-${entityList.type.toLowerCase()}-${date}.csv`, exportEntitiesCsv(rows));
+		const slug = entityList.types.map((t) => t.toLowerCase().replace('_', '-')).join('-');
+		downloadCsv(`dynatrace-${slug}-${date}.csv`, exportEntitiesCsv(rows));
 		toasts.info(`Exported ${rows.length} entities to CSV.`);
 	}
 
@@ -106,18 +106,6 @@
 		</div>
 	</header>
 
-	<nav class="tabs">
-		{#each TABS as tab (tab.type)}
-			<button
-				class="tab"
-				class:active={entityList.type === tab.type}
-				onclick={() => switchTab(tab.type)}
-			>
-				{tab.label}
-			</button>
-		{/each}
-	</nav>
-
 	<FilterBar />
 
 	<div class="toolbar">
@@ -132,6 +120,14 @@
 				· data as of {fetchedTime}
 			{/if}
 		</span>
+		<button
+			class="btn"
+			class:pressed={entityList.showColumnFilters}
+			onclick={toggleColumnFilters}
+			title="Per-column filters on the loaded rows (no API call)"
+		>
+			Column filters
+		</button>
 		<div class="spacer"></div>
 		{#if entityList.selected.size > 0}
 			<button class="btn" onclick={tagSelected}>Tag {entityList.selected.size} selected</button>
@@ -153,13 +149,27 @@
 		ongraph={(e) => (graphEntity = e)}
 	/>
 
-	{#if entityList.nextPageKey}
+	{#if entityList.hasMore || entityList.loadingAll}
 		<div class="more">
-			<button class="btn" onclick={loadMore} disabled={entityList.loadingMore}>
-				{entityList.loadingMore
+			<button
+				class="btn"
+				onclick={loadMore}
+				disabled={entityList.loadingMore || entityList.loadingAll}
+			>
+				{entityList.loadingMore && !entityList.loadingAll
 					? 'Loading…'
 					: `Load more (${entityList.entities.length} of ${entityList.totalCount} loaded)`}
 			</button>
+			{#if entityList.loadingAll}
+				<button class="btn" disabled>
+					Loading all… ({entityList.entities.length} of {entityList.totalCount})
+				</button>
+				<button class="btn" onclick={() => entityList.cancelLoadAll()}>Stop</button>
+			{:else}
+				<button class="btn" onclick={loadAll} disabled={entityList.loadingMore}>
+					Load all ({entityList.totalCount - entityList.entities.length} remaining)
+				</button>
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -215,33 +225,6 @@
 		font-size: 12.5px;
 	}
 
-	.tabs {
-		display: flex;
-		gap: 4px;
-		border-bottom: 1px solid var(--border);
-	}
-
-	.tab {
-		border: none;
-		background: none;
-		padding: 8px 14px;
-		font-size: 14px;
-		font-weight: 550;
-		color: var(--muted);
-		cursor: pointer;
-		border-bottom: 2px solid transparent;
-		margin-bottom: -1px;
-	}
-
-	.tab:hover {
-		color: var(--text);
-	}
-
-	.tab.active {
-		color: var(--accent);
-		border-bottom-color: var(--accent);
-	}
-
 	.toolbar {
 		display: flex;
 		align-items: center;
@@ -260,5 +243,12 @@
 	.more {
 		display: flex;
 		justify-content: center;
+		gap: 8px;
+	}
+
+	.pressed {
+		background: var(--accent-soft);
+		border-color: var(--accent);
+		color: var(--accent);
 	}
 </style>
