@@ -159,16 +159,27 @@ interface SchemaRef {
 export const SERVICE_ANOMALY_SCHEMA = 'builtin:anomaly-detection.services';
 
 /**
- * Key requests are a per-service settings object holding request names. Kept
- * out of DETECTION_SCHEMAS: having key requests must not flag a service as
+ * Key and muted requests are per-service settings objects holding request names.
+ * Both are kept out of DETECTION_SCHEMAS: having them must not flag a service as
  * having "custom" detection settings.
  */
 export const KEY_REQUESTS_SCHEMA = 'builtin:settings.subscriptions.service';
+export const MUTED_REQUESTS_SCHEMA = 'builtin:settings.mutedrequests';
 
-/** Names from a key-requests settings value, defensive about shape. */
-export function keyRequestNames(value: unknown): string[] {
-	const names = (value as { keyRequestNames?: unknown } | undefined)?.keyRequestNames;
+/** Names from a request-list settings value (`field`), defensive about shape. */
+function requestNames(value: unknown, field: string): string[] {
+	const names = (value as Record<string, unknown> | undefined)?.[field];
 	return Array.isArray(names) ? names.filter((n): n is string => typeof n === 'string') : [];
+}
+
+/** Names of requests marked as key requests for a service. */
+export function keyRequestNames(value: unknown): string[] {
+	return requestNames(value, 'keyRequestNames');
+}
+
+/** Names of requests whose monitoring is muted for a service. */
+export function mutedRequestNames(value: unknown): string[] {
+	return requestNames(value, 'mutedRequestNames');
 }
 
 /**
@@ -229,6 +240,7 @@ export async function getDetectionSettings(entity: {
 		entity.type === 'SERVICE'
 			? [
 					{ id: KEY_REQUESTS_SCHEMA, title: 'Key requests', environmentScope: false },
+					{ id: MUTED_REQUESTS_SCHEMA, title: 'Muted requests', environmentScope: false },
 					...DETECTION_SCHEMAS[entity.type]
 				]
 			: DETECTION_SCHEMAS[entity.type];
@@ -279,10 +291,10 @@ export async function getDetectionOverrides(
 	type: EntityType,
 	entityIds: string[]
 ): Promise<Map<string, { schemaId: string; value: unknown }[]>> {
-	// key requests ride along in the same batched call; the caller filters them out
+	// key + muted requests ride along in the same batched call; the caller filters them out
 	const schemaIds = [
 		...DETECTION_SCHEMAS[type].map((s) => s.id),
-		...(type === 'SERVICE' ? [KEY_REQUESTS_SCHEMA] : [])
+		...(type === 'SERVICE' ? [KEY_REQUESTS_SCHEMA, MUTED_REQUESTS_SCHEMA] : [])
 	].join(',');
 	const result = new Map<string, { schemaId: string; value: unknown }[]>();
 	for (const chunk of chunks(entityIds, BATCH_CHUNK_SIZE)) {

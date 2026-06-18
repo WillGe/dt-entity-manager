@@ -39,6 +39,8 @@ export interface RowEnrichment {
 	throughputPerMin?: number;
 	/** services only; names of requests marked as key requests */
 	keyRequests?: string[];
+	/** services only; names of requests whose monitoring is muted */
+	mutedRequests?: string[];
 }
 
 export interface EntityPage {
@@ -67,6 +69,7 @@ export type ColumnId =
 	| 'problems'
 	| 'reqPerMin'
 	| 'keyReqs'
+	| 'mutedReqs'
 	| 'lastSeen'
 	| 'tags'
 	| 'mz';
