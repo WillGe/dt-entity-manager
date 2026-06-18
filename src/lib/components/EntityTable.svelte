@@ -37,7 +37,7 @@
 	};
 
 	const hasServices = $derived(entityList.types.includes('SERVICE'));
-	const colCount = $derived(11 + (hasServices ? 2 : 0));
+	const colCount = $derived(11 + (hasServices ? 3 : 0));
 
 	/** Zone names present in the loaded rows (pre-filter, so options don't vanish while filtering). */
 	const mzOptions = $derived(
@@ -163,6 +163,14 @@
 							<span class="warn" title={entityList.enrichErrors.detection}>⚠</span>
 						{/if}
 					</th>
+					<th class="num" title="Requests with monitoring muted (hover a count for the names)">
+						<button class="sort" onclick={() => entityList.cycleSort('mutedReqs')}>
+							Muted reqs {arrow('mutedReqs')}
+						</button>
+						{#if entityList.enrichErrors.detection}
+							<span class="warn" title={entityList.enrichErrors.detection}>⚠</span>
+						{/if}
+					</th>
 				{/if}
 				<th>
 					<button class="sort" onclick={() => entityList.cycleSort('lastSeen')}>
@@ -260,6 +268,7 @@
 						</select>
 					</th>
 					{#if hasServices}
+						<th></th>
 						<th></th>
 						<th></th>
 					{/if}
@@ -376,6 +385,21 @@
 									{#if enr.keyRequests.length > 0}
 										<span class="key-reqs" title={enr.keyRequests.join('\n')}>
 											{enr.keyRequests.length}
+										</span>
+									{:else}
+										<span class="muted">—</span>
+									{/if}
+								{:else}
+									<span class="muted">{enriching ? '…' : '—'}</span>
+								{/if}
+							</td>
+							<td class="num">
+								{#if entity.type !== 'SERVICE'}
+									<span class="muted">—</span>
+								{:else if enr?.mutedRequests !== undefined}
+									{#if enr.mutedRequests.length > 0}
+										<span class="muted-reqs" title={enr.mutedRequests.join('\n')}>
+											{enr.mutedRequests.length}
 										</span>
 									{:else}
 										<span class="muted">—</span>
@@ -544,7 +568,8 @@
 	}
 
 	.warn,
-	.key-reqs {
+	.key-reqs,
+	.muted-reqs {
 		cursor: help;
 	}
 

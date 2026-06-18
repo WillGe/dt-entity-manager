@@ -4,7 +4,9 @@
 		getDetectionSettings,
 		getServiceMethodIds,
 		KEY_REQUESTS_SCHEMA,
-		keyRequestNames
+		keyRequestNames,
+		MUTED_REQUESTS_SCHEMA,
+		mutedRequestNames
 	} from '$lib/api/dynatrace';
 	import { getCached, setCached } from '$lib/cache';
 	import { connection } from '$lib/stores/connection.svelte';
@@ -46,8 +48,8 @@
 		loadError = null;
 		void loadMethodIds(force);
 		try {
-			// v2: services now include the key-requests section; skip older cache entries
-			const key = `settings:v2:${entity.entityId}`;
+			// v3: services now include the muted-requests section; skip older cache entries
+			const key = `settings:v3:${entity.entityId}`;
 			if (!force) {
 				const hit = getCached<DetectionSettingsSection[]>(key, SETTINGS_TTL_MS);
 				if (hit) {
@@ -109,23 +111,31 @@
 			{:else if sections}
 				{#each sections as section (section.schemaId)}
 					<section>
-						{#if section.schemaId === KEY_REQUESTS_SCHEMA}
-							{@const names = keyRequestNames(section.value)}
+						{#if section.schemaId === KEY_REQUESTS_SCHEMA || section.schemaId === MUTED_REQUESTS_SCHEMA}
+							{@const isMuted = section.schemaId === MUTED_REQUESTS_SCHEMA}
+							{@const names = isMuted
+								? mutedRequestNames(section.value)
+								: keyRequestNames(section.value)}
 							<div class="section-head">
 								<h3>{section.title}</h3>
-								<span class="muted">{names.length} marked</span>
+								<span class="muted">{names.length} {isMuted ? 'muted' : 'marked'}</span>
 							</div>
 							<p class="schema-id muted"><code>{section.schemaId}</code></p>
 							{#if section.error}
 								<p class="error">{section.error}</p>
 							{:else if names.length === 0}
-								<p class="muted">No key requests marked for this service.</p>
+								<p class="muted">
+									{isMuted
+										? 'No muted requests for this service.'
+										: 'No key requests marked for this service.'}
+								</p>
 							{:else}
 								<div class="chips">
 									{#each names as name (name)}
 										{#if methodIds[name]}
 											<a
 												class="chip"
+												class:chip-muted={isMuted}
 												href="{connection.baseUrl}/ui/entity/{methodIds[name]}"
 												target="_blank"
 												rel="noopener noreferrer"
@@ -134,13 +144,15 @@
 												{name}
 											</a>
 										{:else}
-											<span class="chip" title={name}>{name}</span>
+											<span class="chip" class:chip-muted={isMuted} title={name}>{name}</span>
 										{/if}
 									{/each}
 								</div>
 							{/if}
 							<p class="manage-note muted">
-								Managed in Dynatrace: service screen → request → "Mark as key request".
+								{isMuted
+									? 'Managed in Dynatrace: service screen → request → "Mute request".'
+									: 'Managed in Dynatrace: service screen → request → "Mark as key request".'}
 							</p>
 						{:else}
 							<div class="section-head">
@@ -267,6 +279,10 @@
 	a.chip:hover {
 		color: var(--accent);
 		text-decoration: underline;
+	}
+
+	.chip-muted {
+		opacity: 0.6;
 	}
 
 	.manage-note {

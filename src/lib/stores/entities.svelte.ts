@@ -10,6 +10,8 @@ import {
 	keyRequestNames,
 	listEntities,
 	listManagementZoneNames,
+	MUTED_REQUESTS_SCHEMA,
+	mutedRequestNames,
 	SERVICE_ANOMALY_SCHEMA
 } from '$lib/api/dynatrace';
 import { getCached, setCached, updateCachedByPrefix } from '$lib/cache';
@@ -102,6 +104,7 @@ const SORT_ACCESSORS: Record<
 	problems: (e, enr) => enr?.openProblems,
 	reqPerMin: (e, enr) => enr?.throughputPerMin,
 	keyReqs: (e, enr) => enr?.keyRequests?.length,
+	mutedReqs: (e, enr) => enr?.mutedRequests?.length,
 	lastSeen: (e) => e.lastSeenTms,
 	tags: (e) =>
 		e.tags?.length ? e.tags.map(tagLabel).join(',').toLowerCase() : undefined,
@@ -444,8 +447,8 @@ class EntityListStore {
 		const selector = this.selectorFor(type);
 		const ids = this.pages[type].entities.map((e) => e.entityId);
 		if (ids.length === 0) return;
-		// v2: rows now include keyRequests; ignore older-shaped cache entries
-		const key = `enrich:v2:${LIST_CACHE_PREFIX}${selector}`;
+		// v3: rows now include mutedRequests; ignore older-shaped cache entries
+		const key = `enrich:v3:${LIST_CACHE_PREFIX}${selector}`;
 		if (!force) {
 			const hit = getCached<Record<string, RowEnrichment>>(key, ENRICH_TTL_MS);
 			if (hit && ids.every((id) => id in hit.value)) {
@@ -467,13 +470,18 @@ class EntityListStore {
 				const envDefault = type === 'SERVICE' ? await this.envAnomalyDefault(force) : null;
 				for (const id of ids) {
 					const objs = overrides.get(id) ?? [];
-					const detection = objs.filter((o) => o.schemaId !== KEY_REQUESTS_SCHEMA);
+					const detection = objs.filter(
+						(o) => o.schemaId !== KEY_REQUESTS_SCHEMA && o.schemaId !== MUTED_REQUESTS_SCHEMA
+					);
 					next[id].overriddenSchemas = detection.map((o) => o.schemaId);
 					if (type === 'SERVICE') {
 						const own = detection.find((o) => o.schemaId === SERVICE_ANOMALY_SCHEMA)?.value;
 						next[id].detectionSummary = detectionSummary(own ?? envDefault);
 						next[id].keyRequests = keyRequestNames(
 							objs.find((o) => o.schemaId === KEY_REQUESTS_SCHEMA)?.value
+						);
+						next[id].mutedRequests = mutedRequestNames(
+							objs.find((o) => o.schemaId === MUTED_REQUESTS_SCHEMA)?.value
 						);
 					}
 				}
